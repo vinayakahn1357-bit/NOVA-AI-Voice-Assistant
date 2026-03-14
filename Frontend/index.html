@@ -1,275 +1,798 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOVA - Personal AI Assistant</title>
+    <meta name="description"
+        content="NOVA — Your personal AI assistant. Powered by advanced language models for natural conversation, coding help, and more.">
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%23030812'/><polygon points='50,8 88,28 88,72 50,92 12,72 12,28' fill='none' stroke='%2300e5ff' stroke-width='3' opacity='0.85'/><polygon points='50,14 82,31 82,69 50,86 18,69 18,31' fill='%230a1428' opacity='0.9'/><text y='72' x='26' font-size='58' font-family='serif' font-weight='bold' fill='%23e2c077'>N</text></svg>">
     <link
         href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap"
         rel="stylesheet">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="/static/Style.css">
 </head>
 
 <body>
-    <div class="bg-vignette"></div>
 
-    <div class="app-container">
-        <!-- LEFT PANEL -->
-        <div class="left-panel">
-            <div class="brand">
-                <h1 class="logo">N O V A</h1>
-                <div class="subtitle">PERSONAL AI ASSISTANT</div>
+    <!-- ———————————————————————————————
+     HOME VIEW
+——————————————————————————————— -->
+    <div id="view-home" class="app-view view-active">
+        <canvas id="home-particles" class="home-particles-canvas"></canvas>
+
+        <div class="home-hero">
+            <div class="home-logo-wrap">
+                <div class="home-logo-ring"></div>
+                <img src="/static/nova_logo.png" alt="NOVA" class="home-logo-img">
             </div>
+            <div class="home-title-block">
+                <div class="home-title">NOVA</div>
+                <div class="home-subtitle">AI ASSISTANT</div>
+            </div>
+            <div class="home-welcome-banner">
+                <div class="hwb-bracket hwb-left"><span class="hwb-line"></span><span class="hwb-dot"></span></div>
+                <div class="hwb-text">
+                    <span id="home-greeting">WELCOME BACK.</span><br>
+                    <span id="home-system-status">SYSTEM READY.</span>
+                </div>
+                <div class="hwb-bracket hwb-right"><span class="hwb-dot"></span><span class="hwb-line"></span></div>
+            </div>
+            <button class="home-chat-cta" onclick="showView('chat')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+                Talk to NOVA
+            </button>
+        </div>
 
-            <div class="panel distribution-panel">
-                <!-- History Sidebar (hidden by default, shown when History button clicked) -->
-                <div id="history-panel" class="history-panel">
-                    <div class="history-header">
-                        <span>CHAT HISTORY</span>
-                        <button class="history-close-btn" onclick="toggleHistoryPanel()">✕</button>
-                    </div>
-                    <div id="history-list" class="history-list">
-                        <div class="history-empty">No history yet.<br>Start a conversation!</div>
+        <div class="home-cards-row">
+            <div class="home-card" id="card-weather">
+                <div class="hcard-header">WEATHER</div>
+                <div class="hcard-body weather-body">
+                    <div class="weather-icon-wrap" id="weather-icon">—</div>
+                    <div class="weather-temp-wrap">
+                        <span class="weather-temp" id="weather-temp">--°</span>
+                        <span class="weather-feel" id="weather-feel">--</span>
                     </div>
                 </div>
-
-                <!-- JS Chat overlay -->
-                <div id="chat-box" class="chat-box"></div>
+                <div class="weather-desc" id="weather-desc">Loading?</div>
             </div>
-
-            <div class="bottom-tools left-icons">
-                <button class="icon-btn">📄</button>
-                <button class="icon-btn">⚙️</button>
-                <button class="icon-btn">🕒</button>
-                <button class="icon-btn star-btn">🔈</button>
+            <div class="home-card" id="card-schedule">
+                <div class="hcard-header">TODAY'S SCHEDULE <span class="hcard-badge" id="event-count">0 EVENTS</span>
+                </div>
+                <div class="hcard-body">
+                    <div class="mini-cal" id="mini-cal"></div>
+                </div>
+            </div>
+            <div class="home-card" id="card-tasks">
+                <div class="hcard-header">PENDING TASKS <span class="hcard-badge" id="task-count">0 LEFT</span></div>
+                <div class="hcard-body tasks-body">
+                    <ul class="task-list" id="task-list">
+                        <li class="task-item"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span
+                                class="task-text">Review daily briefing</span></li>
+                        <li class="task-item"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span
+                                class="task-text">Check NOVA memory logs</span></li>
+                        <li class="task-item"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span
+                                class="task-text">Schedule weekly goals</span></li>
+                    </ul>
+                    <div class="task-input-row">
+                        <input type="text" class="task-input" id="task-input-field" placeholder="Add task?"
+                            onkeydown="addTaskOnEnter(event)">
+                        <button class="task-add-btn" onclick="addTask()">+</button>
+                    </div>
+                </div>
+            </div>
+            <div class="home-card" id="card-news">
+                <div class="hcard-header">LATEST HEADLINES</div>
+                <div class="hcard-body news-body" id="news-list">
+                    <div class="news-loading">Fetching headlines?</div>
+                </div>
             </div>
         </div>
 
-        <!-- CENTER PANEL -->
-        <div class="center-panel">
-            <h2 class="hub-title">Activity Hub</h2>
+        <nav class="home-bottom-nav">
+            <button class="hbn-tab active" onclick="showView('home')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                <span>HOME</span>
+            </button>
+            <button class="hbn-tab hbn-mic" onclick="showView('voice')">
+                <div class="hbn-mic-ring"></div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path d="M12 3v18" />
+                    <path d="M8 7v10" />
+                    <path d="M16 7v10" />
+                    <path d="M4 11v2" />
+                    <path d="M20 11v2" />
+                </svg>
+                <span>NOVA</span>
+            </button>
+            <button class="hbn-tab" onclick="showView('chat')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span>CHAT</span>
+            </button>
+            <button class="hbn-tab" onclick="showView('dashboard')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                </svg>
+                <span>STATS</span>
+            </button>
+        </nav>
+    </div>
 
-            <div class="hub-labels">
-                <div class="h-label l-top">
-                    <div class="hl-title">CURRENT FOCUS</div>
-                    <div class="hl-items">▪ PROCESSING DATA<br>▪ ALGORITHM REF COMPILER...<br>▪ DELEGATION...<br>▪
-                        DYNAMIC HYPOTHESIS</div>
-                </div>
-                <div class="h-label r-top">
-                    <div class="hl-title">ACTIVE PROCESSES</div>
-                    <div class="hl-items">▪ DATA ANALYSIS...<br>▪ RENDERING...<br>▪ BACKGROUND SEEDING...<br>▪
-                        MODELING...<br>▪ MANAGING INCOMING STREAMS...</div>
-                </div>
-                <div class="h-label r-bot">
-                    <div class="hl-title">CONTEXTUAL LINKS</div>
-                    <div class="hl-items">▪ SYSTEM EVALUATION...<br>▪ DYNAMICS...<br>▪ ENERGY REBALANCING LAYERS...<br>▪
-                        DATA SYNC...<br>▪ SYSTEMATIC FRAMEWORKS SYNCED...</div>
-                </div>
-            </div>
+    <!-- ———————————————————————————————
+     CHAT VIEW  —  Gemini-style clean layout
+——————————————————————————————— -->
+    <div id="view-chat" class="app-view">
 
-            <div class="orb-assembly">
-                <div class="sine-wave-bg">
-                    <svg viewBox="0 0 800 200" preserveAspectRatio="none">
-                        <path class="glow-path p1" d="M 0,100 Q 100,50 200,100 T 400,100 T 600,100 T 800,100" />
-                        <path class="glow-path p2" d="M 0,100 Q 100,150 200,100 T 400,100 T 600,100 T 800,100" />
-                        <path class="glow-path p3" d="M 0,100 Q 100,80 200,100 T 400,100 T 600,100 T 800,100" />
+        <!-- Toast -->
+        <div id="toast-container" class="toast-container"></div>
+
+        <!-- —— CHAT LAYOUT ————————————————————————————————————————————— -->
+        <div class="gc-layout">
+
+            <!-- LEFT SIDEBAR -->
+            <aside class="gc-sidebar" id="gc-sidebar">
+                <!-- Brand -->
+                <div class="gc-brand">
+                    <img src="/static/nova_logo.png" alt="N" class="gc-brand-logo">
+                    <span class="gc-brand-name">N O V A</span>
+                </div>
+
+                <!-- New Chat -->
+                <button class="gc-new-chat" id="new-chat-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
-                </div>
-                <div class="sphere-rings">
-                    <div class="glow-core"></div>
-                    <div class="hexagon-clipper">
-                        <div class="hex-bg"></div>
-                    </div>
-                    <div class="hexagon">
-                        <div class="hex-inner">
-                            <span class="n-logo">N</span>
-                            <span class="wifi left"></span>
-                            <span class="wifi right"></span>
-                        </div>
-                    </div>
-                    <div class="ring-3d r1"></div>
-                    <div class="ring-3d r2">
-                        <div class="planet p-blue"></div>
-                    </div>
-                    <div class="ring-3d r3">
-                        <div class="planet p-gold"></div>
-                    </div>
-                    <div class="ring-3d r4">
-                        <div class="planet p-purple"></div>
-                        <div class="planet p-cyan"></div>
-                    </div>
-                </div>
-            </div>
+                    New Chat
+                </button>
 
-            <!-- Voice Assistant Bar -->
-            <div class="voice-bar-wrapper">
-                <!-- Mic button floating above the bar -->
-                <div class="mic-orb-container">
-                    <div class="mic-orb-ring"></div>
-                    <button class="voice-btn mic-orb-btn">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                            <line x1="12" y1="19" x2="12" y2="23"></line>
-                            <line x1="8" y1="23" x2="16" y2="23"></line>
-                        </svg>
-                    </button>
+                <!-- Model badge -->
+                <div class="gc-model-pill" id="model-badge">⚡ mistral</div>
+
+                <!-- History -->
+                <div class="gc-history-label">RECENT</div>
+                <div id="history-panel" class="gc-history">
+                    <div id="history-list" class="gc-history-list">
+                        <div class="gc-history-empty">No history yet.<br>Start a conversation!</div>
+                    </div>
                 </div>
 
-                <!-- Frosted glass bar -->
-                <div class="voice-glass-bar">
-                    <div class="vbar-scanline"></div>
-                    <div id="waveform" class="waveform-container"></div>
-                    <div class="vbar-texts">
-                        <div class="voice-status">Listening for 'Nova'...</div>
-                        <div class="voice-hint">How can Nova help you today? (say a command)</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stylish search / input bar -->
-            <div class="search-bar-wrapper">
-                <div class="search-bar">
-                    <span class="search-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                    </span>
-                    <input type="text" id="user-input" class="search-input" placeholder="Ask Nova anything..."
-                        autocomplete="off" />
-                    <button onclick="sendMessage()" class="search-send-btn" title="Send">
+                <!-- Sidebar Footer -->
+                <div class="gc-sidebar-footer">
+                    <button class="gc-icon-btn" onclick="showView('dashboard')" title="Dashboard">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2.2">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7" />
+                            <rect x="14" y="3" width="7" height="7" />
+                            <rect x="14" y="14" width="7" height="7" />
+                            <rect x="3" y="14" width="7" height="7" />
+                        </svg>
+                    </button>
+                    <button class="gc-icon-btn" onclick="openSettings()" title="Settings">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="3" />
+                            <path
+                                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                        </svg>
+                    </button>
+                    <button class="gc-icon-btn" onclick="exportChat()" title="Export Chat">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                    </button>
+                    <!-- Volume -->
+                    <div class="vol-widget" id="vol-widget">
+                        <div class="vol-popup" id="vol-popup">
+                            <div class="vol-track" id="vol-track">
+                                <div class="vol-fill" id="vol-fill"></div>
+                                <div class="vol-thumb" id="vol-thumb"></div>
+                            </div>
+                        </div>
+                        <button class="gc-icon-btn vol-icon-btn" id="vol-icon-btn" title="Volume"><span
+                                id="vol-icon">🔊</span></button>
+                    </div>
+                    <button class="gc-icon-btn" onclick="showView('home')" title="Home">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                            <polyline points="9 22 9 12 15 12 15 22" />
                         </svg>
                     </button>
                 </div>
+            </aside>
+
+            <!-- SIDEBAR TOGGLE (mobile) -->
+            <button class="gc-sidebar-toggle" id="gc-sidebar-toggle" onclick="toggleChatSidebar()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+            </button>
+
+            <!-- MAIN CHAT AREA -->
+            <main class="gc-main">
+
+                <!-- Welcome Screen -->
+                <div id="welcome-screen" class="gc-welcome">
+                    <div class="gc-welcome-orb">
+                        <div class="gc-orb-ring"></div>
+                        <img src="/static/nova_logo.png" alt="NOVA" class="gc-orb-img">
+                    </div>
+                    <h1 class="gc-welcome-title">Hello, I'm <span class="gc-name-highlight">Nova</span></h1>
+                    <p class="gc-welcome-sub">Your personal AI assistant. How can I help you today?</p>
+                    <div class="gc-chips">
+                        <button class="gc-chip" onclick="useChip('Explain quantum computing simply')">⚛️ Quantum
+                            computing</button>
+                        <button class="gc-chip"
+                            onclick="useChip('Write a Python function to sort a list of dictionaries by a key')">🐍
+                            Python help</button>
+                        <button class="gc-chip"
+                            onclick="useChip('What are the best productivity tips for deep work?')">💡 Productivity
+                            tips</button>
+                        <button class="gc-chip" onclick="useChip('Write a short poem about artificial intelligence')">✏️
+                            Write a poem</button>
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div id="chat-box" class="gc-messages"></div>
+
+                <!-- Input Bar -->
+                <div class="gc-input-zone">
+                    <!-- Mic / voice status strip -->
+                    <div class="gc-voice-strip" id="gc-voice-strip">
+                        <div id="waveform" class="waveform-container"></div>
+                        <span class="gc-voice-status voice-status">Tap mic to talk to Nova</span>
+                    </div>
+
+                    <div class="gc-input-bar" id="search-bar">
+                        <!-- Mic button -->
+                        <button class="gc-mic-btn voice-btn mic-orb-btn" id="main-mic-btn" title="Voice input">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" y1="19" x2="12" y2="23" />
+                                <line x1="8" y1="23" x2="16" y2="23" />
+                            </svg>
+                        </button>
+
+                        <!-- Text input -->
+                        <textarea id="user-input" class="gc-textarea" placeholder="Ask Nova anything…"
+                            autocomplete="off" rows="1"></textarea>
+
+                        <!-- Char counter -->
+                        <span class="char-counter" id="char-counter"></span>
+
+                        <!-- Send button -->
+                        <button onclick="sendMessage()" class="gc-send-btn" id="send-btn" title="Send (Enter)">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.2">
+                                <line x1="22" y1="2" x2="11" y2="13" />
+                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <p class="gc-input-hint">NOVA may make mistakes. Verify important information.</p>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ———————————————————————————————
+     DASHBOARD VIEW  —  Orb + Stats widgets
+——————————————————————————————— -->
+    <div id="view-dashboard" class="app-view">
+        <div class="dash-layout">
+
+            <!-- Back button -->
+            <button class="dash-back-btn" onclick="showView('home')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="15 18 9 12 15 6" />
+                </svg>
+                Back to Home
+            </button>
+
+            <div class="dash-header">
+                <div class="dash-title">N O V A &nbsp; D A S H B O A R D</div>
+                <div class="dash-subtitle">System Overview &amp; Intelligence Stats</div>
             </div>
+
+            <!-- NEW DASHBOARD: Left 2x2 grid | Center Logo | Right 2x2 grid -->
+            <div class="dash-body">
+
+                <!-- ── LEFT 2×2 GRID ─────────────────────────────── -->
+                <div class="dash-panel-grid">
+
+                    <!-- Mini Panel 1: NOVA Brain -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x1F9E0;</div>
+                        <div class="dmp-label">NOVA BRAIN</div>
+                        <div class="dmp-stats-row">
+                            <div class="dmp-stat">
+                                <span class="dmp-num" id="brain-facts">0</span>
+                                <span class="dmp-unit">facts</span>
+                            </div>
+                            <div class="dmp-stat">
+                                <span class="dmp-num" id="brain-convos">0</span>
+                                <span class="dmp-unit">chats</span>
+                            </div>
+                        </div>
+                        <div class="dmp-progress-track">
+                            <div class="dmp-progress-fill" id="brain-progress-fill" style="width:0%"></div>
+                        </div>
+                        <div class="dmp-footer">Memory <span id="brain-pct">0%</span></div>
+                        <div class="brain-tags dmp-tags" id="brain-tags">
+                            <span class="brain-tag-empty" style="font-size:0.62rem">No interests yet</span>
+                        </div>
+                        <div class="dmp-actions">
+                            <button class="dmp-action-btn" onclick="showView('chat')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                                Chat With Nova
+                            </button>
+                            <button class="dmp-reset-btn" onclick="resetNovaMemory()">&#x1F5D1; Reset Memory</button>
+                        </div>
+                    </div>
+
+                    <!-- Mini Panel 2: System Health -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x1F4BB;</div>
+                        <div class="dmp-label">SYSTEM HEALTH</div>
+                        <div class="dmp-health-row">
+                            <span class="dmp-health-label">CPU</span>
+                            <div class="dmp-health-bar-wrap">
+                                <div class="dmp-health-bar cpu-fill" id="cpu-bar" style="width:0%"></div>
+                            </div>
+                            <span class="dmp-health-pct" id="cpu-pct">—</span>
+                        </div>
+                        <div class="dmp-health-row">
+                            <span class="dmp-health-label">RAM</span>
+                            <div class="dmp-health-bar-wrap">
+                                <div class="dmp-health-bar mem-fill" id="memory-bar" style="width:0%"></div>
+                            </div>
+                            <span class="dmp-health-pct" id="mem-pct">—</span>
+                        </div>
+                        <div class="dmp-net-row">
+                            <span class="dmp-health-label">NET</span>
+                            <span class="dmp-net-dot" id="net-dot">&#x25CF;</span>
+                            <span class="dmp-net-status text-cyan" id="network-status">Active</span>
+                        </div>
+                        <div class="dmp-footer">
+                            CPU: <span id="cpu-value">—</span> &nbsp;|&nbsp; RAM: <span id="memory-value">—</span>
+                        </div>
+                    </div>
+
+                    <!-- Mini Panel 3: Model Info -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x26A1;</div>
+                        <div class="dmp-label">MODEL INFO</div>
+                        <div class="dmp-kv-row"><span class="dmp-key">ENGINE</span><span class="dmp-val"
+                                id="id-model-name">Mistral</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">MODE</span><span
+                                class="dmp-val text-cyan">Streaming</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">VOICE</span><span
+                                class="dmp-val text-gold">Enabled</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">STATUS</span><span class="dmp-val text-cyan"
+                                id="node-status">ONLINE</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">UPTIME</span><span class="dmp-val text-gold"
+                                id="node-uptime">00:00</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">LATENCY</span><span class="dmp-val"
+                                id="node-latency">—ms</span></div>
+                    </div>
+
+                    <!-- Mini Panel 4: Quick Actions -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x1F39B;</div>
+                        <div class="dmp-label">QUICK ACTIONS</div>
+                        <div class="dmp-actions">
+                            <button class="dmp-action-btn" onclick="showView('chat')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                </svg>
+                                Open Chat
+                            </button>
+                            <button class="dmp-action-btn voice-btn" onclick="handleMicClick(); showView('chat')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                </svg>
+                                Voice Chat
+                            </button>
+                            <button class="dmp-action-btn" onclick="exportChat()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                Export Chat
+                            </button>
+                            <button class="dmp-action-btn" onclick="openSettings()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="3" />
+                                    <path
+                                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                                </svg>
+                                Settings
+                            </button>
+                        </div>
+                    </div>
+
+                </div><!-- end left grid -->
+
+                <!-- —— CENTER: Animated NOVA Logo ———————————————————— -->
+                <div class="dash-center-logo">
+                    <!-- Outer decorative rings -->
+                    <div class="dcl-ring dcl-r1"></div>
+                    <div class="dcl-ring dcl-r2"></div>
+                    <div class="dcl-ring dcl-r3"></div>
+                    <div class="dcl-ring dcl-r4"></div>
+
+                    <!-- Floating orbit planets -->
+                    <div class="dcl-orbit dcl-orbit1">
+                        <div class="dcl-planet dcl-p-cyan"></div>
+                    </div>
+                    <div class="dcl-orbit dcl-orbit2">
+                        <div class="dcl-planet dcl-p-gold"></div>
+                    </div>
+                    <div class="dcl-orbit dcl-orbit3">
+                        <div class="dcl-planet dcl-p-purple"></div>
+                    </div>
+
+                    <!-- Glow aura -->
+                    <div class="dcl-glow"></div>
+                    <div class="dcl-glow dcl-glow2"></div>
+
+                    <!-- Hexagon logo core -->
+                    <div class="dcl-hex-wrap">
+                        <div class="dcl-hex">
+                            <div class="dcl-hex-pulse p1"></div>
+                            <div class="dcl-hex-pulse p2"></div>
+                            <img src="/static/nova_logo.png" alt="NOVA" class="dcl-logo-img">
+                        </div>
+                    </div>
+
+                    <!-- Name + tagline below logo -->
+                    <div class="dcl-name">N O V A</div>
+                    <div class="dcl-tagline">Neural Omniscient Virtual Assistant</div>
+
+                    <!-- Live status dots -->
+                    <div class="dcl-status-dots">
+                        <span class="dcl-dot dcl-dot-cyan"></span>
+                        <span class="dcl-status-text">Online &amp; Ready</span>
+                        <span class="dcl-dot dcl-dot-gold"></span>
+                        <span class="dcl-sessions-text">Sessions: <span id="node-sessions">0</span></span>
+                    </div>
+
+                    <!-- HUD corner brackets -->
+                    <div class="dcl-corner dcl-c-tl"></div>
+                    <div class="dcl-corner dcl-c-tr"></div>
+                    <div class="dcl-corner dcl-c-bl"></div>
+                    <div class="dcl-corner dcl-c-br"></div>
+                </div><!-- end center logo -->
+
+                <!-- —— RIGHT 2?2 GRID (mirrored) is the left panel already; or add more info -->
+                <div class="dash-panel-grid">
+
+                    <!-- Mini Panel 5: Conversations today -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x1F4CA;</div>
+                        <div class="dmp-label">ACTIVITY</div>
+                        <div class="dmp-big-num" id="brain-days">0</div>
+                        <div class="dmp-big-label">Days Active</div>
+                        <div class="dmp-kv-row" style="margin-top:10px"><span class="dmp-key">SESSIONS</span><span
+                                class="dmp-val text-cyan" id="brain-badge">Active Session</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">MEMORY</span><span class="dmp-val text-purple"
+                                id="node-mem">0 FACTS</span></div>
+                    </div>
+
+                    <!-- Mini Panel 6: Top Interests -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x1F52C;</div>
+                        <div class="dmp-label">TOP INTERESTS</div>
+                        <div class="brain-tags dmp-tags" id="brain-tags-dash"
+                            style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+                            <span class="brain-tag-empty"
+                                style="font-size:0.75rem; color: rgba(255,255,255,0.4); font-style: italic;">Monitoring
+                                user interactions...</span>
+                        </div>
+                    </div>
+
+                    <!-- Mini Panel 7: NOVA Identity -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x1F916;</div>
+                        <div class="dmp-label">NOVA IDENTITY</div>
+                        <div class="dmp-kv-row"><span class="dmp-key">NAME</span><span class="dmp-val text-gold">N O V
+                                A</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">VERSION</span><span class="dmp-val">v2.0</span>
+                        </div>
+                        <div class="dmp-kv-row"><span class="dmp-key">BACKEND</span><span
+                                class="dmp-val text-cyan">Ollama</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">VOICE</span><span class="dmp-val text-gold">Web
+                                TTS</span></div>
+                        <div class="nova-id-status" style="margin-top:10px">
+                            <span class="nova-status-dot"></span>
+                            <span class="nova-status-text">Online &amp; Ready</span>
+                        </div>
+                    </div>
+
+                    <!-- Mini Panel 8: Model select shortcut -->
+                    <div class="dash-mini-panel">
+                        <div class="dmp-icon">&#x2699;</div>
+                        <div class="dmp-label">AI ENGINE</div>
+                        <div class="dmp-kv-row"><span class="dmp-key">MODEL</span><span class="dmp-val text-cyan"
+                                id="node-model">MISTRAL</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">TEMP</span><span class="dmp-val">0.75</span></div>
+                        <div class="dmp-kv-row"><span class="dmp-key">TOKENS</span><span class="dmp-val">1024</span>
+                        </div>
+                        <div class="dmp-kv-row"><span class="dmp-key">STREAM</span><span
+                                class="dmp-val text-gold">ON</span></div>
+                        <button class="dmp-action-btn" style="margin-top:10px;width:100%"
+                            onclick="openSettings()">&#x2699; Configure</button>
+                    </div>
+
+                </div><!-- end right grid -->
+
+            </div><!-- end dash-body -->
+        </div><!-- end dash-layout -->
+    </div>
+
+
+    <!-- ———————————————————————————————
+         VOICE VIEW  —  Full-screen voice assistant mode
+    ——————————————————————————————— -->
+    <div id="view-voice" class="app-view">
+        <!-- Neural network particle canvas -->
+        <canvas id="voice-particles" class="voice-particles-canvas"></canvas>
+
+        <!-- Top: NOVA logo -->
+        <div class="vv-header">
+            <img src="/static/nova_logo.png" alt="NOVA" class="vv-logo">
+            <div class="vv-brand-name">N O V A</div>
+            <div class="vv-brand-sub">AI ASSISTANT</div>
         </div>
 
-        <!-- RIGHT PANEL -->
-        <div class="right-panel">
-            <div class="panel widget v-small">
-                <div class="panel-header">DYNAMIC DATA VISUALIZATION</div>
-                <div class="line-chart-area">
-                    <div class="y-axis-label">VALUE Y</div>
-                    <div class="x-axis-label">PARAMETER X</div>
-                    <div class="grid-lines">
-                        <div class="hl" style="bottom: 25%"></div>
-                        <div class="hl" style="bottom: 50%"></div>
-                        <div class="hl" style="bottom: 75%"></div>
-                        <div class="vl" style="left: 25%"></div>
-                        <div class="vl" style="left: 50%"></div>
-                        <div class="vl" style="left: 75%"></div>
-                    </div>
-                    <svg viewBox="0 0 200 100" class="line-chart-svg" preserveAspectRatio="none">
-                        <defs>
-                            <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                                <stop offset="0%" stop-color="#4da8da" />
-                                <stop offset="100%" stop-color="#a374d5" />
-                            </linearGradient>
-                            <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stop-color="rgba(77,168,218,0.4)" />
-                                <stop offset="100%" stop-color="rgba(77,168,218,0)" />
-                            </linearGradient>
-                        </defs>
-                        <path d="M0,80 L30,50 L60,85 L100,50 L140,40 L180,10 L200,5 L200,100 L0,100 Z"
-                            fill="url(#fillGrad)" />
-                        <path d="M0,80 L30,50 L60,85 L100,50 L140,40 L180,10 L200,5" fill="none" class="chart-line"
-                            stroke="url(#lineGrad)" stroke-width="2" />
-                        <circle cx="30" cy="50" r="2" fill="#fff" />
-                        <circle cx="60" cy="85" r="2" fill="#fff" />
-                        <circle cx="100" cy="50" r="2" fill="#fff" />
-                        <circle cx="140" cy="40" r="2" fill="#fff" />
-                        <circle cx="180" cy="10" r="2" fill="#fff" />
-                    </svg>
-                </div>
+        <!-- Center: Ultimate Jarvis AI Core -->
+        <div class="vv-orb-wrap" id="vv-orb-wrap" onclick="handleVoiceViewMic()">
+            <!-- Deep Space Aura -->
+            <div class="jcore-aura jcore-aura-1"></div>
+            <div class="jcore-aura jcore-aura-2"></div>
+
+            <!-- Structural Rings (HUD) -->
+            <svg class="jcore-ring jcore-ring-hud" viewBox="0 0 300 300">
+                <!-- Outer framing -->
+                <circle cx="150" cy="150" r="145" fill="none" class="jc-stroke-cyan-dim" stroke-width="1" />
+                <!-- Measurement ticks -->
+                <circle cx="150" cy="150" r="140" fill="none" class="jc-stroke-cyan" stroke-width="4"
+                    stroke-dasharray="2 12" />
+                <!-- Rotating dashed track -->
+                <circle cx="150" cy="150" r="125" fill="none" class="jc-stroke-cyan-bright" stroke-width="2"
+                    stroke-dasharray="20 40 100 20" />
+            </svg>
+
+            <!-- Tech Node Satellites -->
+            <div class="jcore-satellite-track">
+                <div class="jc-sat jc-sat-1"></div>
+                <div class="jc-sat jc-sat-2"></div>
+                <div class="jc-sat jc-sat-3"></div>
             </div>
 
-            <div class="panel widget cap-widget">
-                <div class="panel-header">CORE CAPABILITIES</div>
-                <div class="capabilities-grid">
-                    <div class="cap-item voice-btn" onclick="startVoiceRecognition()" title="Click to activate voice">
-                        <div class="cap-icon gi-gold">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.2">
-                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                <line x1="12" y1="19" x2="12" y2="23"></line>
-                            </svg>
-                        </div>
-                        <span class="cap-text">Voice<br>Assistant</span>
+            <!-- Inner Power Rings -->
+            <svg class="jcore-ring jcore-ring-power" viewBox="0 0 300 300">
+                <circle cx="150" cy="150" r="105" fill="none" class="jc-stroke-grad" stroke-width="8"
+                    stroke-dasharray="80 30" stroke-linecap="round" />
+                <circle cx="150" cy="150" r="90" fill="none" class="jc-stroke-cyan" stroke-width="1"
+                    stroke-dasharray="4 4" />
+            </svg>
+
+            <!-- Reactor Core -->
+            <div class="jcore-reactor">
+                <svg class="jcore-hexagon" viewBox="0 0 100 100">
+                    <polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="none" class="jc-stroke-cyan"
+                        stroke-width="2" />
+                </svg>
+                <div class="jcore-energy-eye"></div>
+                <div class="jcore-n-letter">N</div>
+            </div>
+
+            <!-- Global Gradients -->
+            <svg style="width:0; height:0; position:absolute;">
+                <defs>
+                    <linearGradient id="jcoreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#00e5ff" />
+                        <stop offset="50%" stop-color="#bc60d3" />
+                        <stop offset="100%" stop-color="#00e5ff" />
+                    </linearGradient>
+                    <linearGradient id="jcoreSpeakGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#e2c077" />
+                        <stop offset="50%" stop-color="#f59e6c" />
+                        <stop offset="100%" stop-color="#bc60d3" />
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+
+        <!-- Status text -->
+        <div class="vv-status-block">
+            <div class="vv-status-text" id="vv-status-text">TAP TO SPEAK</div>
+            <div class="vv-hint-text" id="vv-hint-text"></div>
+        </div>
+
+        <!-- Chat Log — scrollable conversation history -->
+        <div class="vv-chat-log" id="vv-chat-log">
+            <!-- User/Nova message pairs are appended here by JS -->
+        </div>
+
+        <!-- Live transcript while listening (floating indicator) -->
+        <div class="vv-live-transcript" id="vv-transcript"></div>
+
+        <!-- Bottom nav -->
+        <div class="vv-bottom-nav">
+            <button class="vv-nav-btn" onclick="showView('home')" title="Home">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                <span>Home</span>
+            </button>
+            <button class="vv-nav-btn" onclick="showView('chat')" title="Chat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span>Chat</span>
+            </button>
+            <button class="vv-nav-btn" onclick="showView('dashboard')" title="Stats">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                </svg>
+                <span>Stats</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ——— GLOBAL Settings Modal (accessible from any view) ——— -->
+    <div id="settings-overlay" class="settings-overlay" onclick="closeSettingsOnOverlay(event)">
+        <div class="settings-modal">
+            <div class="settings-header">
+                <span class="settings-title">⚙️ NOVA Settings</span>
+                <button class="settings-close-btn" onclick="closeSettings()">✕</button>
+            </div>
+            <div class="settings-body">
+                <div class="settings-group">
+                    <label class="settings-label">AI Provider</label>
+                    <div class="settings-toggle-group">
+                        <button class="settings-toggle active" id="provider-ollama" onclick="setProvider('ollama')">🖥️
+                            Ollama (Local)</button>
+                        <button class="settings-toggle" id="provider-groq" onclick="setProvider('groq')">☁️ Groq
+                            (Cloud)</button>
                     </div>
-                    <div class="cap-item" onclick="toggleHistoryPanel()">
-                        <div class="cap-icon gi-blue">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.2">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <polyline points="12 6 12 12 16 14"></polyline>
-                            </svg>
-                        </div>
-                        <span class="cap-text">History</span>
+                </div>
+                <div id="groq-settings" style="display:none">
+                    <div class="settings-group">
+                        <label class="settings-label">Groq API Key</label>
+                        <input type="password" id="settings-groq-key" class="settings-input" placeholder="gsk_xxxx..."
+                            autocomplete="off">
+                        <p class="settings-hint">Get free key at <a href="https://console.groq.com" target="_blank"
+                                style="color:#00e5ff">console.groq.com</a></p>
                     </div>
-                    <div class="cap-item">
-                        <div class="cap-icon gi-blue">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.2">
-                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                <line x1="16" y1="2" x2="16" y2="6"></line>
-                                <line x1="8" y1="2" x2="8" y2="6"></line>
-                                <line x1="3" y1="10" x2="21" y2="10"></line>
-                            </svg>
-                        </div>
-                        <span class="cap-text">Scheduling</span>
+                    <div class="settings-group">
+                        <label class="settings-label">Groq Model</label>
+                        <select id="settings-groq-model" class="settings-select">
+                            <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Best)</option>
+                            <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fastest)</option>
+                            <option value="llama3-70b-8192">Llama 3 70B</option>
+                            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                            <option value="gemma2-9b-it">Gemma 2 9B</option>
+                        </select>
                     </div>
-                    <div class="cap-item">
-                        <div class="cap-icon gi-gold">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.2">
-                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                            </svg>
+                </div>
+                <div id="ollama-settings">
+                    <div class="settings-group">
+                        <label class="settings-label">Ollama Model</label>
+                        <select id="settings-model" class="settings-select">
+                            <option value="mistral">Mistral</option>
+                            <option value="llama3">Llama 3</option>
+                            <option value="gemma2">Gemma 2</option>
+                            <option value="phi3">Phi-3</option>
+                            <option value="codellama">CodeLlama</option>
+                            <option value="deepseek-r1">DeepSeek R1</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Temperature <span id="temp-display"
+                            class="settings-value-display">0.75</span></label>
+                    <input type="range" id="settings-temperature" class="settings-slider" min="0" max="2" step="0.05"
+                        value="0.75"
+                        oninput="document.getElementById('temp-display').textContent=parseFloat(this.value).toFixed(2)">
+                    <div class="settings-slider-labels">
+                        <span>Focused</span><span>Balanced</span><span>Creative</span>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Max Tokens <span id="tokens-display"
+                            class="settings-value-display">1024</span></label>
+                    <input type="range" id="settings-tokens" class="settings-slider" min="64" max="4096" step="64"
+                        value="1024" oninput="document.getElementById('tokens-display').textContent=this.value">
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">System Prompt</label>
+                    <textarea id="settings-system-prompt" class="settings-textarea"
+                        placeholder="Describe Nova's personality?" rows="4"></textarea>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Response Mode</label>
+                    <div class="settings-toggle-group">
+                        <button class="settings-toggle active" id="mode-stream" onclick="setStreamMode(true)">⚡
+                            Streaming</button>
+                        <button class="settings-toggle" id="mode-full" onclick="setStreamMode(false)">■ Full
+                            Reply</button>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">🎙️ Voice Personality</label>
+                    <p class="settings-hint">Tunes pitch, rate &amp; style using your system's TTS voices.</p>
+                    <div class="voice-preset-grid" id="voice-preset-grid">
+                        <div class="voice-preset-card" id="vp-nova" onclick="selectVoicePreset('nova')">
+                            <div class="vp-emoji">🤖</div>
+                            <div class="vp-name">NOVA</div>
+                            <div class="vp-desc">Clear · Natural</div>
                         </div>
-                        <span class="cap-text">Knowledge<br>Base</span>
+                        <div class="voice-preset-card" id="vp-anya" onclick="selectVoicePreset('anya')">
+                            <div class="vp-emoji">🌸</div>
+                            <div class="vp-name">Anya</div>
+                            <div class="vp-desc">Playful · Curious</div>
+                        </div>
+                        <div class="voice-preset-card" id="vp-mitsuri" onclick="selectVoicePreset('mitsuri')">
+                            <div class="vp-emoji">🌺</div>
+                            <div class="vp-name">Mitsuri</div>
+                            <div class="vp-desc">Warm · Bubbly</div>
+                        </div>
+                    </div>
+                    <div class="vp-preview-row">
+                        <button class="vp-preview-btn" onclick="previewVoicePreset()">▶ Preview Voice</button>
+                        <span class="vp-active-label">Active: <strong id="vp-active-name">NOVA</strong></span>
                     </div>
                 </div>
             </div>
-
-            <div class="panel widget health-widget">
-                <div class="panel-header">SYSTEM HEALTH</div>
-                <div class="sys-health">
-                    <div class="health-row">
-                        <div class="health-stat">
-                            <span class="stat-label">CPU:</span>
-                            <span class="stat-value" id="cpu-value">65%</span>
-                            <div class="bar-container" style="display:none;">
-                                <div id="cpu-bar" class="bar-fill bg-cyan" style="width:65%;"></div>
-                            </div>
-                        </div>
-                        <div class="health-stat">
-                            <span class="stat-label">MEMORY:</span>
-                            <span class="stat-value" id="memory-value">45%</span>
-                            <div class="bar-container" style="display:none;">
-                                <div id="memory-bar" class="bar-fill bg-purple" style="width:45%;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="health-network">
-                        <span class="stat-label">NETWORK:</span> <span class="stat-value text-cyan">Active</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bottom-tools right-icons">
-                <button class="icon-btn voice-btn">🎙️</button>
-                <button class="icon-btn">📄</button>
-                <button class="icon-btn">🕒</button>
-                <div class="corner-logo">N</div>
+            <div class="settings-footer">
+                <button class="settings-btn secondary" onclick="resetSettings()">Reset Defaults</button>
+                <button class="settings-btn primary" onclick="saveSettings()">Save Changes</button>
             </div>
         </div>
     </div>

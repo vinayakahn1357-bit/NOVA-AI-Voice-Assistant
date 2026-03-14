@@ -1,0 +1,30 @@
+# ── Python ─────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.spec
+
+# ── Virtual Environment ─────────────────────────
+venv/
+.venv/
+env/
+
+# ── Environment Variables ───────────────────────
+.env
+
+# ── Nova Runtime Data ───────────────────────────
+nova_memory.json
+nova_memory.json.migrated
+nova_memory.db
+nova_memory.db-shm
+nova_memory.db-wal
+
+# ── IDE / OS ────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
