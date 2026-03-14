@@ -55,9 +55,13 @@ print(f"[NOVA] Background thread pool: {_BG_WORKERS} workers")
 # ─── Load .env ────────────────────────────────────────────────────────────────
 load_dotenv()
 
+# ─── Determine absolute path for Frontend ─────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "Frontend")
+
 app = Flask(
     __name__,
-    static_folder="Frontend/static",
+    static_folder=os.path.join(FRONTEND_DIR, "static"),
     static_url_path="/static"
 )
 app.json.sort_keys = False
@@ -182,7 +186,7 @@ def build_groq_messages(history: list) -> list:
 # ─── Serve Frontend ───────────────────────────────────────────────────────────
 @app.route("/")
 def serve_index():
-    return send_from_directory("Frontend", "index.html")
+    return send_from_directory(FRONTEND_DIR, "index.html")
 
 
 # ─── Chat Route (standard, full response) ─────────────────────────────────────

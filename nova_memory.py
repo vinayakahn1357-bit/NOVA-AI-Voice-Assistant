@@ -21,8 +21,12 @@ import copy
 import requests
 from datetime import date
 
-DB_FILE      = os.path.join(os.path.dirname(__file__), "nova_memory.db")
-LEGACY_JSON  = os.path.join(os.path.dirname(__file__), "nova_memory.json")
+if os.getenv("VERCEL") == "1":
+    DB_FILE      = "/tmp/nova_memory.db"
+    LEGACY_JSON  = "/tmp/nova_memory.json"
+else:
+    DB_FILE      = os.path.join(os.path.dirname(__file__), "nova_memory.db")
+    LEGACY_JSON  = os.path.join(os.path.dirname(__file__), "nova_memory.json")
 OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 
 _DDL = """
