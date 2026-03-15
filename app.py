@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, session, redirect, url_for
 import requests
 import psutil
 import json
@@ -6,6 +6,11 @@ import asyncio
 import io
 import os
 import subprocess
+import hashlib
+import uuid
+import hmac
+from functools import wraps
+import time
 import edge_tts
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
@@ -65,6 +70,48 @@ app = Flask(
     static_url_path="/static"
 )
 app.json.sort_keys = False
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "nova-secret-change-me-in-env")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30  # 30 days
+
+# ─── User Database (JSON flat-file, created on first run) ─────────────────────
+_USERS_FILE = os.path.join(BASE_DIR, "nova_users.json")
+
+def _load_users() -> dict:
+    if os.path.exists(_USERS_FILE):
+        try:
+            with open(_USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def _save_users(users: dict):
+    with open(_USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
+
+def _hash_password(password: str, salt: str = None) -> tuple:
+    """Return (hashed, salt) using PBKDF2-HMAC-SHA256."""
+    if salt is None:
+        salt = uuid.uuid4().hex
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260_000)
+    return dk.hex(), salt
+
+def _verify_password(password: str, stored_hash: str, salt: str) -> bool:
+    candidate, _ = _hash_password(password, salt)
+    return hmac.compare_digest(candidate, stored_hash)
+
+def login_required(f):
+    """Decorator: redirects to /login if the user is not authenticated."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect("/login?next=" + request.path)
+        return f(*args, **kwargs)
+    return decorated
+
+print("[NOVA] Auth system ready.")
 
 # ─── CORS (allow all origins for local dev) ──────────────────────────────────
 @app.after_request
@@ -328,9 +375,194 @@ def _call_groq(history: list, stream: bool = False, model_override: str = ""):
                          stream=stream, timeout=60)
 
 
+# ─── Auth Routes ─────────────────────────────────────────────────────────────
+
+@app.route("/auth/register", methods=["POST"])
+def auth_register():
+    data = request.get_json() or {}
+    name     = str(data.get("name", "")).strip()
+    email    = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+
+    if not name or not email or not password:
+        return jsonify({"ok": False, "error": "All fields are required."}), 400
+    if len(password) < 6:
+        return jsonify({"ok": False, "error": "Password must be at least 6 characters."}), 400
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify({"ok": False, "error": "Please enter a valid email address."}), 400
+
+    users = _load_users()
+    if email in users:
+        return jsonify({"ok": False, "error": "An account with this email already exists."}), 409
+
+    hashed, salt = _hash_password(password)
+    users[email] = {
+        "id":       str(uuid.uuid4()),
+        "name":     name,
+        "email":    email,
+        "hash":     hashed,
+        "salt":     salt,
+        "provider": "email",
+        "created":  int(time.time()),
+    }
+    _save_users(users)
+
+    session.permanent = True
+    session["user_id"]    = users[email]["id"]
+    session["user_email"] = email
+    session["user_name"]  = name
+
+    return jsonify({"ok": True, "user": {"name": name, "email": email}})
+
+
+@app.route("/auth/login", methods=["POST"])
+def auth_login():
+    data = request.get_json() or {}
+    email    = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+
+    if not email or not password:
+        return jsonify({"ok": False, "error": "Email and password are required."}), 400
+
+    users = _load_users()
+    user  = users.get(email)
+    if not user or not _verify_password(password, user["hash"], user["salt"]):
+        return jsonify({"ok": False, "error": "Incorrect email or password."}), 401
+
+    session.permanent = True
+    session["user_id"]    = user["id"]
+    session["user_email"] = email
+    session["user_name"]  = user["name"]
+
+    return jsonify({"ok": True, "user": {"name": user["name"], "email": email}})
+
+
+@app.route("/auth/logout", methods=["POST"])
+def auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/auth/me", methods=["GET"])
+def auth_me():
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "user": None}), 401
+    return jsonify({
+        "ok": True,
+        "user": {
+            "id":    session.get("user_id"),
+            "name":  session.get("user_name"),
+            "email": session.get("user_email"),
+        }
+    })
+
+
+@app.route("/auth/google")
+def auth_google():
+    """
+    Google OAuth 2.0 redirect.
+    To activate: add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env,
+    install authlib (pip install authlib), and replace this stub.
+    """
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    if not google_client_id:
+        # No Google credentials — redirect to login with info message
+        return redirect("/login?error=google_not_configured")
+
+    # Build the Google OAuth authorization URL
+    redirect_uri = request.host_url.rstrip("/") + "/auth/google/callback"
+    params = {
+        "client_id":     google_client_id,
+        "redirect_uri":  redirect_uri,
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "access_type":   "offline",
+        "prompt":        "select_account",
+    }
+    from urllib.parse import urlencode
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@app.route("/auth/google/callback")
+def auth_google_callback():
+    """Google OAuth callback — exchanges code for user info."""
+    error = request.args.get("error")
+    if error:
+        return redirect("/login?error=google_cancelled")
+
+    code = request.args.get("code")
+    if not code:
+        return redirect("/login?error=google_failed")
+
+    google_client_id     = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    if not google_client_id or not google_client_secret:
+        return redirect("/login?error=google_not_configured")
+
+    redirect_uri = request.host_url.rstrip("/") + "/auth/google/callback"
+
+    # Exchange code for tokens
+    token_res = requests.post("https://oauth2.googleapis.com/token", data={
+        "code":          code,
+        "client_id":     google_client_id,
+        "client_secret": google_client_secret,
+        "redirect_uri":  redirect_uri,
+        "grant_type":    "authorization_code",
+    })
+    if not token_res.ok:
+        return redirect("/login?error=google_token_failed")
+
+    id_token_str = token_res.json().get("access_token", "")
+    userinfo_res = requests.get("https://www.googleapis.com/oauth2/v3/userinfo",
+                                headers={"Authorization": f"Bearer {id_token_str}"})
+    if not userinfo_res.ok:
+        return redirect("/login?error=google_userinfo_failed")
+
+    info  = userinfo_res.json()
+    email = info.get("email", "").lower()
+    name  = info.get("name", email.split("@")[0])
+
+    users = _load_users()
+    if email not in users:
+        # Auto-create account for Google users (no password needed)
+        users[email] = {
+            "id":       str(uuid.uuid4()),
+            "name":     name,
+            "email":    email,
+            "hash":     "",
+            "salt":     "",
+            "provider": "google",
+            "created":  int(time.time()),
+        }
+        _save_users(users)
+
+    session.permanent = True
+    session["user_id"]    = users[email]["id"]
+    session["user_email"] = email
+    session["user_name"]  = name
+    return redirect("/app")
+
+
 # ─── Serve Frontend ───────────────────────────────────────────────────────────
 @app.route("/")
+def serve_landing():
+    """Marketing / landing page — shown to unauthenticated visitors."""
+    return send_from_directory(FRONTEND_DIR, "landing.html")
+
+
+@app.route("/login")
+def serve_login():
+    """Sign in / sign up page."""
+    # If already logged in, go straight to the app
+    if session.get("user_id"):
+        return redirect("/app")
+    return send_from_directory(FRONTEND_DIR, "login.html")
+
+
+@app.route("/app")
+@login_required
 def serve_index():
+    """Main NOVA AI assistant application (requires auth)."""
     return send_from_directory(FRONTEND_DIR, "index.html")
 
 

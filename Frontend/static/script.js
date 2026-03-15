@@ -750,6 +750,28 @@ let selectedVoice = null;
 let isSpeaking = false;
 let currentVoicePreset = localStorage.getItem('nova_voice_preset') || 'nova';
 
+// ── Mic-mute guard — prevents recognition picking up Nova's own voice ─────────
+let _micMutedBySpeaker = false; // true while Nova is speaking
+let _unmuteMicTimer = null;
+
+function _muteMicForSpeaking() {
+    if (_unmuteMicTimer) { clearTimeout(_unmuteMicTimer); _unmuteMicTimer = null; }
+    _micMutedBySpeaker = true;
+    // Stop recognition immediately so Nova's TTS audio isn't captured
+    if (isListening && recognition) {
+        try { recognition.stop(); } catch (e) { /* already stopped */ }
+    }
+}
+
+function _unmuteMicAfterSpeaking() {
+    // Wait 800 ms for speaker echo + reverb to clear before allowing the mic
+    if (_unmuteMicTimer) clearTimeout(_unmuteMicTimer);
+    _unmuteMicTimer = setTimeout(() => {
+        _micMutedBySpeaker = false;
+        _unmuteMicTimer = null;
+    }, 800);
+}
+
 // ── Voice personality presets ────────────────────────────────────────────────
 const VOICE_PRESETS = {
     nova: {
@@ -870,6 +892,8 @@ let currentAudio = null;
 // immediately and subsequent sentences are already decoded before they're needed.
 function speak(text) {
     if (!text) return;
+    // Silence the mic BEFORE we start playing so Nova doesn't hear herself
+    _muteMicForSpeaking();
     stopSpeaking();
 
     const plainText = stripForSpeech(text);
@@ -921,6 +945,8 @@ function stopSpeaking() {
     window.speechSynthesis.cancel();
     isSpeaking = false;
     setNovaSpeakingState(false);
+    // Allow mic to resume after speaker echo clears
+    _unmuteMicAfterSpeaking();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1421,20 +1447,32 @@ const DEFAULT_SETTINGS = {
     provider: 'hybrid',
 };
 
-function openSettings() {
+async function openSettings() {
+    // ── Step 1: Fetch live_mode from backend BEFORE loading the UI ──────────
+    // This ensures novaLiveMode is correct when setProvider() runs inside
+    // loadSettingsIntoUI(), so the Ollama Local button is never briefly shown
+    // in live mode.
+    try {
+        const r = await fetch('/settings');
+        if (r.ok) {
+            const data = await r.json();
+            novaLiveMode = data.live_mode === true;
+        }
+    } catch { /* server down — keep existing novaLiveMode */ }
+
+    // ── Step 2: Apply live_mode to the Ollama Local button ──────────────────
+    const ollamaLocalBtn = document.getElementById('provider-ollama');
+    if (ollamaLocalBtn) {
+        ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
+    }
+
+    // ── Step 3: If current saved provider is 'ollama' but live, switch to hybrid
+    if (novaLiveMode && currentProvider === 'ollama') {
+        currentProvider = 'hybrid';
+    }
+
+    // ── Step 4: Now safe to load the rest of the settings UI ────────────────
     loadSettingsIntoUI();
-    // Fetch backend live_mode to show/hide Ollama Local option
-    fetch('/settings').then(r => r.json()).then(data => {
-        novaLiveMode = data.live_mode === true;
-        const ollamaLocalBtn = document.getElementById('provider-ollama');
-        if (ollamaLocalBtn) {
-            ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
-        }
-        // If currently set to local ollama in live mode, switch to hybrid
-        if (novaLiveMode && currentProvider === 'ollama') {
-            setProvider('hybrid');
-        }
-    }).catch(() => {});
     document.getElementById('settings-overlay').classList.add('open');
 }
 
@@ -1459,11 +1497,11 @@ function setProvider(p) {
     // In live mode, never allow Ollama local
     if (novaLiveMode && p === 'ollama') p = 'hybrid';
     currentProvider = p;
-    // Guard: provider-ollama is hidden by default in live mode
+    // Ollama Local button visibility is managed by applySavedSettings / openSettings
+    // (they read live_mode from the server). Here we only force-hide it in live mode.
     const ollamaBtn = document.getElementById('provider-ollama');
     if (ollamaBtn) {
-        // Only show Ollama Local button if NOT in live mode
-        if (!novaLiveMode) ollamaBtn.style.display = '';
+        if (novaLiveMode) ollamaBtn.style.display = 'none'; // always hidden in live mode
         ollamaBtn.classList.toggle('active', p === 'ollama');
     }
     document.getElementById('provider-ollama-cloud').classList.toggle('active', p === 'ollama_cloud');
@@ -1472,8 +1510,10 @@ function setProvider(p) {
     document.getElementById('groq-settings').style.display = p === 'groq' ? 'block' : 'none';
     document.getElementById('ollama-cloud-settings').style.display = p === 'ollama_cloud' ? 'block' : 'none';
     document.getElementById('hybrid-settings').style.display = p === 'hybrid' ? 'block' : 'none';
-    // Ollama model dropdown only for local/cloud (hybrid has its own per-column selector)
-    document.getElementById('ollama-settings').style.display = (p === 'ollama' || p === 'ollama_cloud') ? 'block' : 'none';
+    // Ollama model dropdown: show for local or cloud (hybrid has its own per-column selectors)
+    // In live mode, never show the ollama-settings block for 'ollama' since the button is hidden
+    const showOllamaSettings = (p === 'ollama' && !novaLiveMode) || p === 'ollama_cloud';
+    document.getElementById('ollama-settings').style.display = showOllamaSettings ? 'block' : 'none';
 }
 
 function loadSettingsIntoUI() {
@@ -1696,6 +1736,7 @@ function setVoiceListeningState(active) {
 
 function handleMicClick() {
     if (isSpeaking) { stopSpeaking(); return; }
+    if (_micMutedBySpeaker) return;  // still in echo-clear delay — ignore tap
     if (isListening) { if (recognition) recognition.stop(); return; }
     if (!recognition) { showToast('Speech recognition is not supported in this browser', 'warning'); return; }
     voiceBuffer = '';
@@ -1744,6 +1785,12 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         silenceTimer = null;
         setVoiceListeningState(false);
         const finalText = voiceBuffer.trim();
+        // If mic was muted because Nova was speaking, discard any captured text
+        // (it was Nova's own TTS being picked up) and do NOT auto-submit
+        if (_micMutedBySpeaker) {
+            voiceBuffer = '';
+            return;
+        }
         if (finalText) {
             sendVoiceMessage(finalText);
         }
@@ -2664,6 +2711,7 @@ function isVoiceViewActive() {
 // ─── Mic button on voice view ─────────────────────────────────────────────────
 function handleVoiceViewMic() {
     if (isSpeaking) { stopSpeaking(); setVoiceViewState('idle'); return; }
+    if (_micMutedBySpeaker) return;  // still in echo-clear delay — ignore tap
     if (isListening) { if (recognition) recognition.stop(); setVoiceViewState('idle'); return; }
     if (!recognition) { showToast('Speech recognition not supported in this browser', 'warning'); return; }
     // Show instant visual feedback while browser negotiates the mic
@@ -2798,3 +2846,67 @@ sendVoiceMessage = async function (message) {
         showToast('Could not reach NOVA \u2014 is the server running?', 'error');
     }
 };
+
+
+// ═══════════════════════════════════════════════════════════
+// ─── NOVA AUTH — User Session Integration
+// ═══════════════════════════════════════════════════════════
+
+async function novaLoadUser() {
+    try {
+        const res = await fetch('/auth/me');
+        if (!res.ok) {
+            // Not logged in — the server will have redirected at page load,
+            // but if somehow we're here, bounce to login.
+            window.location.href = '/login';
+            return;
+        }
+        const data = await res.json();
+        if (!data.ok || !data.user) { window.location.href = '/login'; return; }
+
+        const user = data.user;
+
+        // Populate sidebar user chip
+        const chip = document.getElementById('gc-user-chip');
+        const avatar = document.getElementById('gc-user-avatar');
+        const nameEl = document.getElementById('gc-user-name');
+        const emailEl = document.getElementById('gc-user-email');
+        if (chip) chip.style.display = 'flex';
+        if (avatar) avatar.textContent = (user.name || 'U').charAt(0).toUpperCase();
+        if (nameEl) nameEl.textContent = user.name || 'User';
+        if (emailEl) emailEl.textContent = user.email || '';
+
+        // Show logout button
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) logoutBtn.style.display = '';
+
+        // Greet user by first name on the welcome screen
+        const greeting = document.getElementById('gc-welcome-title') || document.querySelector('.gc-welcome-title');
+        if (greeting) {
+            const firstName = (user.name || 'friend').split(' ')[0];
+            greeting.innerHTML = `Hello, <span class="gc-name-highlight">${firstName}</span> — I'm <span class="gc-name-highlight">Nova</span>`;
+        }
+        // Also update home page greeting
+        const homeGreeting = document.getElementById('home-greeting');
+        if (homeGreeting) {
+            const firstName = (user.name || '').split(' ')[0];
+            const hour = new Date().getHours();
+            const greet = hour < 12 ? 'GOOD MORNING' : hour < 17 ? 'GOOD AFTERNOON' : hour < 21 ? 'GOOD EVENING' : 'GOOD NIGHT';
+            homeGreeting.textContent = firstName ? `${greet}, ${firstName.toUpperCase()}.` : greet + '.';
+        }
+
+    } catch (e) {
+        // Network error — still let user use the app (offline graceful)
+        console.warn('[NOVA] Could not reach /auth/me:', e.message);
+    }
+}
+
+async function novaLogout() {
+    try {
+        await fetch('/auth/logout', { method: 'POST' });
+    } catch { /* ignore */ }
+    window.location.href = '/login';
+}
+
+// Load user info when DOM is ready
+document.addEventListener('DOMContentLoaded', novaLoadUser);

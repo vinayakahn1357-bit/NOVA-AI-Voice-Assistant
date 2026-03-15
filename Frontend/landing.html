@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVA AI — Your Neural Voice Assistant</title>
+    <meta name="description"
+        content="NOVA is an advanced AI voice assistant powered by hybrid cloud intelligence. Have natural conversations, get instant answers, and experience the future of AI.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --cyan: #00e5ff;
+            --purple: #bc60d3;
+            --gold: #e2c077;
+            --dark: #080c14;
+            --card: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: rgba(255, 255, 255, 0.88);
+            --muted: rgba(255, 255, 255, 0.45);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--dark);
+            color: var(--text);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* ─── Animated Background ─── */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background-image:
+                linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+
+        .bg-glow {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse 70% 50% at 20% 20%, rgba(0, 229, 255, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 80% 80%, rgba(188, 96, 211, 0.07) 0%, transparent 60%);
+        }
+
+        /* ─── NAV ─── */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 48px;
+            background: rgba(8, 12, 20, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-decoration: none;
+            color: white;
+        }
+
+        .nav-logo-orb {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+            animation: orbPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes orbPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 28px rgba(0, 229, 255, 0.7), 0 0 50px rgba(188, 96, 211, 0.3);
+            }
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+
+        .nav-links a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: white;
+        }
+
+        .nav-cta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-ghost {
+            padding: 9px 22px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-primary {
+            padding: 9px 22px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--cyan), #0099cc);
+            color: #080c14;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+            transition: all 0.25s;
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.25);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0 30px rgba(0, 229, 255, 0.4);
+        }
+
+        /* ─── HERO ─── */
+        .hero {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 120px 24px 80px;
+            text-align: center;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 100px;
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: var(--cyan);
+            text-transform: uppercase;
+            margin-bottom: 28px;
+            animation: fadeUp 0.6s ease both;
+        }
+
+        .hero-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--cyan);
+            animation: blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: 0.3
+            }
+        }
+
+        .hero-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(3rem, 8vw, 6rem);
+            font-weight: 800;
+            line-height: 1.05;
+            letter-spacing: -0.02em;
+            animation: fadeUp 0.7s ease 0.1s both;
+        }
+
+        .hero-title .gradient-text {
+            background: linear-gradient(135deg, var(--cyan) 0%, var(--purple) 60%, var(--gold) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-subtitle {
+            max-width: 600px;
+            margin: 24px auto 48px;
+            font-size: 1.15rem;
+            color: var(--muted);
+            font-weight: 400;
+            animation: fadeUp 0.7s ease 0.2s both;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeUp 0.7s ease 0.3s both;
+        }
+
+        .btn-hero-primary {
+            padding: 16px 36px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--cyan), #0099cc);
+            color: #080c14;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+            transition: all 0.25s;
+            box-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
+            letter-spacing: 0.01em;
+        }
+
+        .btn-hero-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 50px rgba(0, 229, 255, 0.5);
+        }
+
+        .btn-hero-ghost {
+            padding: 16px 36px;
+            border-radius: 14px;
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.04);
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.25s;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-hero-ghost:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(24px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ─── Orb Visualization ─── */
+        .hero-visual {
+            position: relative;
+            margin-top: 72px;
+            width: 320px;
+            height: 320px;
+            animation: fadeUp 0.8s ease 0.4s both;
+        }
+
+        .orb-core {
+            position: absolute;
+            inset: 60px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%,
+                    rgba(0, 229, 255, 0.6) 0%,
+                    rgba(0, 229, 255, 0.2) 40%,
+                    rgba(188, 96, 211, 0.3) 70%,
+                    transparent 100%);
+            box-shadow:
+                0 0 60px rgba(0, 229, 255, 0.4),
+                0 0 120px rgba(188, 96, 211, 0.2),
+                inset 0 0 40px rgba(0, 229, 255, 0.1);
+            animation: orbFloat 4s ease-in-out infinite;
+        }
+
+        @keyframes orbFloat {
+
+            0%,
+            100% {
+                transform: translateY(0) scale(1);
+            }
+
+            50% {
+                transform: translateY(-12px) scale(1.04);
+            }
+        }
+
+        .orb-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid rgba(0, 229, 255, 0.15);
+            animation: ringExpand 4s ease-in-out infinite;
+        }
+
+        .orb-ring:nth-child(1) {
+            inset: 40px;
+            animation-delay: 0s;
+        }
+
+        .orb-ring:nth-child(2) {
+            inset: 20px;
+            animation-delay: 0.5s;
+        }
+
+        .orb-ring:nth-child(3) {
+            inset: 0px;
+            border-color: rgba(188, 96, 211, 0.1);
+            animation-delay: 1s;
+        }
+
+        @keyframes ringExpand {
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+
+            50% {
+                transform: scale(1.04);
+                opacity: 1;
+            }
+        }
+
+        .orb-particles {
+            position: absolute;
+            inset: 0;
+            animation: slowRotate 12s linear infinite;
+        }
+
+        .orb-particle {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--cyan);
+            box-shadow: 0 0 8px var(--cyan);
+        }
+
+        .orb-particle:nth-child(1) {
+            top: 10%;
+            left: 50%;
+        }
+
+        .orb-particle:nth-child(2) {
+            top: 50%;
+            right: 5%;
+            background: var(--purple);
+            box-shadow: 0 0 8px var(--purple);
+        }
+
+        .orb-particle:nth-child(3) {
+            bottom: 12%;
+            left: 20%;
+            background: var(--gold);
+            box-shadow: 0 0 8px var(--gold);
+        }
+
+        .orb-particle:nth-child(4) {
+            bottom: 30%;
+            right: 15%;
+        }
+
+        @keyframes slowRotate {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .orb-label {
+            position: absolute;
+            bottom: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* ─── TRUSTED BY ─── */
+        .trusted {
+            position: relative;
+            z-index: 1;
+            padding: 20px 24px;
+            text-align: center;
+        }
+
+        .trusted p {
+            font-size: 0.8rem;
+            color: var(--muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+        .trusted-logos {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 36px;
+            flex-wrap: wrap;
+        }
+
+        .trusted-logo {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.2);
+            letter-spacing: 0.06em;
+        }
+
+        /* ─── FEATURE CARDS ─── */
+        .section {
+            position: relative;
+            z-index: 1;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 100px 24px;
+        }
+
+        .section-label {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--cyan);
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2rem, 4vw, 2.8rem);
+            font-weight: 700;
+            margin-bottom: 16px;
+            letter-spacing: -0.01em;
+        }
+
+        .section-sub {
+            max-width: 520px;
+            color: var(--muted);
+            font-size: 1rem;
+            margin-bottom: 60px;
+            line-height: 1.7;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 32px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.04) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(0, 229, 255, 0.2);
+        }
+
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 20px;
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.15);
+        }
+
+        .feature-icon.purple {
+            background: rgba(188, 96, 211, 0.08);
+            border-color: rgba(188, 96, 211, 0.15);
+        }
+
+        .feature-icon.gold {
+            background: rgba(226, 192, 119, 0.08);
+            border-color: rgba(226, 192, 119, 0.15);
+        }
+
+        .feature-icon.green {
+            background: rgba(0, 255, 136, 0.08);
+            border-color: rgba(0, 255, 136, 0.15);
+        }
+
+        .feature-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .feature-desc {
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        /* ─── HOW IT WORKS ─── */
+        .how-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0;
+            position: relative;
+        }
+
+        .how-grid::before {
+            content: '';
+            position: absolute;
+            top: 28px;
+            left: 10%;
+            right: 10%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            opacity: 0.3;
+        }
+
+        .how-step {
+            text-align: center;
+            padding: 0 24px;
+        }
+
+        .how-num {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--card);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--cyan);
+        }
+
+        .how-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .how-desc {
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+
+        /* ─── PROVIDERS ─── */
+        .providers-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 48px;
+        }
+
+        .provider-chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 22px;
+            border-radius: 14px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .provider-chip .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot-cyan {
+            background: var(--cyan);
+            box-shadow: 0 0 8px var(--cyan);
+        }
+
+        .dot-purple {
+            background: var(--purple);
+            box-shadow: 0 0 8px var(--purple);
+        }
+
+        .dot-gold {
+            background: var(--gold);
+            box-shadow: 0 0 8px var(--gold);
+        }
+
+        .dot-green {
+            background: #00ff88;
+            box-shadow: 0 0 8px #00ff88;
+        }
+
+        /* ─── CTA BANNER ─── */
+        .cta-banner {
+            position: relative;
+            z-index: 1;
+            margin: 0 24px 100px;
+            border-radius: 28px;
+            background: linear-gradient(135deg,
+                    rgba(0, 229, 255, 0.08) 0%,
+                    rgba(188, 96, 211, 0.06) 50%,
+                    rgba(226, 192, 119, 0.04) 100%);
+            border: 1px solid rgba(0, 229, 255, 0.15);
+            padding: 80px 48px;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .cta-banner::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -20%;
+            width: 60%;
+            height: 200%;
+            background: radial-gradient(ellipse, rgba(0, 229, 255, 0.06) 0%, transparent 70%);
+        }
+
+        .cta-banner::after {
+            content: '';
+            position: absolute;
+            bottom: -50%;
+            right: -20%;
+            width: 60%;
+            height: 200%;
+            background: radial-gradient(ellipse, rgba(188, 96, 211, 0.06) 0%, transparent 70%);
+        }
+
+        .cta-banner h2 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            font-weight: 700;
+            margin-bottom: 16px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cta-banner p {
+            color: var(--muted);
+            max-width: 480px;
+            margin: 0 auto 36px;
+            font-size: 1rem;
+            line-height: 1.7;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cta-banner-actions {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+
+        .btn-large {
+            padding: 18px 44px;
+            border-radius: 14px;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+            transition: all 0.25s;
+            letter-spacing: 0.01em;
+        }
+
+        .btn-large.primary {
+            background: linear-gradient(135deg, var(--cyan), #0099cc);
+            color: #080c14;
+            box-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
+        }
+
+        .btn-large.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 50px rgba(0, 229, 255, 0.5);
+        }
+
+        .btn-large.secondary {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        .btn-large.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ─── FOOTER ─── */
+        footer {
+            position: relative;
+            z-index: 1;
+            border-top: 1px solid var(--border);
+            padding: 40px 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        footer .logo {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        footer p {
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        /* ─── Scroll-reveal (simple) ─── */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease;
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ─── Mobile ─── */
+        @media(max-width:768px) {
+            nav {
+                padding: 14px 20px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .hero {
+                padding: 100px 20px 60px;
+            }
+
+            .hero-visual {
+                width: 240px;
+                height: 240px;
+            }
+
+            .cta-banner {
+                padding: 48px 24px;
+                margin: 0 12px 60px;
+            }
+
+            footer {
+                flex-direction: column;
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+
+    <!-- NAV -->
+    <nav>
+        <a href="/" class="nav-logo">
+            <div class="nav-logo-orb">✦</div>
+            NOVA
+        </a>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#providers">Providers</a>
+        </div>
+        <div class="nav-cta">
+            <a href="/login" class="btn-ghost">Sign In</a>
+            <a href="/login" class="btn-primary">Get Started →</a>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+        <div class="hero-badge">✦ Powered by Hybrid AI Intelligence</div>
+        <h1 class="hero-title">
+            Meet <span class="gradient-text">NOVA</span><br>
+            Your AI Voice Assistant
+        </h1>
+        <p class="hero-subtitle">
+            An advanced neural voice assistant that thinks, speaks, and remembers.
+            Powered by a hybrid cloud AI that routes every query to the smartest model available.
+        </p>
+        <div class="hero-actions">
+            <a href="/login" class="btn-hero-primary">🚀 Get Started Free</a>
+            <a href="#features" class="btn-hero-ghost">✦ Explore Features</a>
+        </div>
+
+        <div class="hero-visual">
+            <div class="orb-ring"></div>
+            <div class="orb-ring"></div>
+            <div class="orb-ring"></div>
+            <div class="orb-core"></div>
+            <div class="orb-particles">
+                <div class="orb-particle"></div>
+                <div class="orb-particle"></div>
+                <div class="orb-particle"></div>
+                <div class="orb-particle"></div>
+            </div>
+            <div class="orb-label">N O V A</div>
+        </div>
+    </section>
+
+    <!-- FEATURES -->
+    <div class="section" id="features">
+        <div class="reveal">
+            <span class="section-label">✦ What NOVA can do</span>
+            <h2 class="section-title">Built for real conversations</h2>
+            <p class="section-sub">
+                NOVA isn't just a chatbot — it's a thinking, speaking, remembering assistant
+                that adapts to how you communicate.
+            </p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card reveal">
+                <div class="feature-icon">🎙️</div>
+                <div class="feature-title">Natural Voice Conversations</div>
+                <div class="feature-desc">Speak naturally and NOVA listens. Powered by real-time speech recognition with
+                    smart silence detection — no wake words, no buttons.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon purple">🔀</div>
+                <div class="feature-title">Hybrid AI Intelligence</div>
+                <div class="feature-desc">Simple questions go to fast, lightweight models. Complex reasoning routes to
+                    powerful 70B models. Always the right tool for the job.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon gold">🧠</div>
+                <div class="feature-title">Persistent Memory</div>
+                <div class="feature-desc">NOVA learns from every conversation — your interests, preferences, and facts.
+                    She remembers who you are across sessions.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon green">⚡</div>
+                <div class="feature-title">Streaming Responses</div>
+                <div class="feature-desc">Answers appear word-by-word as they're generated, with gapless sentence-level
+                    TTS so you hear Nova speak before she's even done thinking.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">🌐</div>
+                <div class="feature-title">Cloud-Powered, Always On</div>
+                <div class="feature-desc">No GPU required. NOVA runs entirely on cloud AI providers — Groq, Ollama
+                    Cloud, or both in hybrid mode — accessible from any browser.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon purple">🎨</div>
+                <div class="feature-title">Voice Personalities</div>
+                <div class="feature-desc">Choose NOVA's voice personality — the precise, clear NOVA voice, the playful
+                    Anya, or the warm Mitsuri. Neural TTS for premium quality.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HOW IT WORKS -->
+    <div class="section" id="how-it-works" style="padding-top:0;">
+        <div class="reveal">
+            <span class="section-label">✦ Simple as speaking</span>
+            <h2 class="section-title">How it works</h2>
+            <p class="section-sub">Get up and running in seconds. No downloads, no setup.</p>
+        </div>
+        <div class="how-grid reveal">
+            <div class="how-step">
+                <div class="how-num">01</div>
+                <div class="how-title">Sign In</div>
+                <div class="how-desc">Create a free account with your Google account in one click.</div>
+            </div>
+            <div class="how-step">
+                <div class="how-num">02</div>
+                <div class="how-title">Configure</div>
+                <div class="how-desc">Add your Groq or Ollama Cloud API key — or use Hybrid mode for the best of both.
+                </div>
+            </div>
+            <div class="how-step">
+                <div class="how-num">03</div>
+                <div class="how-title">Talk to NOVA</div>
+                <div class="how-desc">Tap the mic, speak naturally. NOVA listens, thinks, and speaks back.</div>
+            </div>
+            <div class="how-step">
+                <div class="how-num">04</div>
+                <div class="how-title">NOVA Remembers</div>
+                <div class="how-desc">She learns from every session — getting smarter and more personalized over time.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PROVIDERS -->
+    <div class="section" id="providers" style="padding-top:0; text-align:center;">
+        <div class="reveal">
+            <span class="section-label">✦ Powered by the best</span>
+            <h2 class="section-title">Multi-provider AI backbone</h2>
+            <p class="section-sub" style="margin:0 auto 0;">
+                NOVA's hybrid engine automatically picks the best available AI provider for every request —
+                balancing speed, capability, and cost.
+            </p>
+        </div>
+        <div class="providers-row reveal">
+            <div class="provider-chip"><span class="dot dot-cyan"></span> Groq Cloud — Ultra-fast inference</div>
+            <div class="provider-chip"><span class="dot dot-purple"></span> Ollama Cloud — Lightweight models</div>
+            <div class="provider-chip"><span class="dot dot-gold"></span> Hybrid Mode — Best of both</div>
+            <div class="provider-chip"><span class="dot dot-green"></span> Ollama Local — Private & offline</div>
+        </div>
+    </div>
+
+    <!-- CTA BANNER -->
+    <div class="cta-banner reveal">
+        <h2>Ready to meet <span class="gradient-text">NOVA</span>?</h2>
+        <p>Your AI companion is waiting. Start a conversation in seconds — it's completely free to try.</p>
+        <div class="cta-banner-actions">
+            <a href="/login" class="btn-large primary">🚀 Sign Up Free</a>
+            <a href="/login" class="btn-large secondary">Sign In →</a>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+        <div class="logo">✦ NOVA AI</div>
+        <p>© 2026 NOVA AI. Built with ❤️ and hybrid intelligence.</p>
+        <p style="color:rgba(255,255,255,0.2)">v2.0 · Hybrid Mode</p>
+    </footer>
+
+    <script>
+        // ── Scroll-reveal ──────────────────────────────────────────────────────
+        const revealEls = document.querySelectorAll('.reveal');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(e => {
+                if (e.isIntersecting) {
+                    e.target.classList.add('visible');
+                    observer.unobserve(e.target);
+                }
+            });
+        }, { threshold: 0.12 });
+        revealEls.forEach(el => observer.observe(el));
+    </script>
+</body>
+
+</html>

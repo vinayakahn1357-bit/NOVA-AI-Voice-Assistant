@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — NOVA AI</title>
+    <meta name="description" content="Sign in to NOVA AI — your neural voice assistant">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --cyan: #00e5ff; --purple: #bc60d3; --gold: #e2c077; --red: #ff4d6d;
+            --dark: #080c14; --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.09);
+            --text: rgba(255,255,255,0.88); --muted: rgba(255,255,255,0.45);
+        }
+        body { font-family:'Inter',sans-serif; background:var(--dark); color:var(--text); min-height:100vh; display:flex; overflow:hidden; }
+
+        /* ─── Left Panel ─── */
+        .left { flex:1; position:relative; display:flex; align-items:center; justify-content:center; padding:48px; overflow:hidden; }
+        .left::before { content:''; position:absolute; inset:0; background-image: linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px); background-size:50px 50px; }
+        .left-glow { position:absolute; inset:0; background: radial-gradient(ellipse 80% 60% at 30% 40%, rgba(0,229,255,0.07) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 70% 70%, rgba(188,96,211,0.07) 0%, transparent 60%); }
+        .left-content { position:relative; z-index:1; text-align:center; max-width:440px; }
+
+        /* Orb */
+        .orb-wrap { width:240px; height:240px; position:relative; margin:0 auto 32px; }
+        .orb-ring { position:absolute; border-radius:50%; border:1px solid rgba(0,229,255,0.12); animation:ringP 3.5s ease-in-out infinite; }
+        .orb-ring:nth-child(1){ inset:28px; animation-delay:0s; }
+        .orb-ring:nth-child(2){ inset:14px; animation-delay:0.4s; }
+        .orb-ring:nth-child(3){ inset:0; border-color:rgba(188,96,211,0.1); animation-delay:0.8s; }
+        @keyframes ringP { 0%,100%{transform:scale(1);opacity:.7} 50%{transform:scale(1.04);opacity:1} }
+        .orb-core { position:absolute; inset:44px; border-radius:50%; background:radial-gradient(circle at 35% 30%, rgba(0,229,255,.65) 0%, rgba(0,229,255,.2) 40%, rgba(188,96,211,.3) 70%, transparent 100%); box-shadow:0 0 50px rgba(0,229,255,.4), 0 0 90px rgba(188,96,211,.15), inset 0 0 30px rgba(0,229,255,.1); animation:orbF 4s ease-in-out infinite; }
+        @keyframes orbF { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-10px) scale(1.04)} }
+        .orb-pts { position:absolute; inset:0; animation:spinS 10s linear infinite; }
+        .orb-pt { position:absolute; width:5px; height:5px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); }
+        .orb-pt:nth-child(1){ top:8%; left:50%; }
+        .orb-pt:nth-child(2){ top:50%; right:3%; background:var(--purple); box-shadow:0 0 8px var(--purple); }
+        .orb-pt:nth-child(3){ bottom:10%; left:18%; background:var(--gold); box-shadow:0 0 8px var(--gold); }
+        @keyframes spinS { to{ transform:rotate(360deg); } }
+
+        .left-name { font-family:'Space Grotesk',sans-serif; font-size:2rem; font-weight:700; background:linear-gradient(135deg,var(--cyan),var(--purple)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; letter-spacing:.08em; margin-bottom:10px; }
+        .left-sub { color:var(--muted); font-size:.9rem; line-height:1.7; margin-bottom:28px; }
+        .feats { display:flex; flex-direction:column; gap:10px; text-align:left; }
+        .feat { display:flex; align-items:center; gap:12px; padding:11px 16px; border-radius:12px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); font-size:.84rem; }
+        .feat strong { color:var(--text); font-weight:500; }
+        .feat span { color:var(--muted); }
+
+        /* ─── Right Panel ─── */
+        .right { width:500px; flex-shrink:0; background:rgba(255,255,255,.025); border-left:1px solid var(--border); display:flex; align-items:center; justify-content:center; padding:40px; overflow-y:auto; }
+        .auth-box { width:100%; max-width:380px; }
+
+        .back { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:.82rem; text-decoration:none; margin-bottom:28px; transition:color .2s; }
+        .back:hover { color:var(--text); }
+        .logo { display:flex; align-items:center; gap:10px; margin-bottom:28px; text-decoration:none; }
+        .logo-orb { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,var(--cyan),var(--purple)); display:flex; align-items:center; justify-content:center; font-size:14px; box-shadow:0 0 12px rgba(0,229,255,.4); }
+        .logo span { font-family:'Space Grotesk',sans-serif; font-size:1.15rem; font-weight:700; }
+
+        /* Tabs */
+        .tabs { display:flex; gap:4px; background:rgba(255,255,255,.04); border-radius:12px; padding:4px; margin-bottom:24px; }
+        .tab { flex:1; padding:10px; border-radius:9px; border:none; background:transparent; color:var(--muted); font-size:.9rem; font-weight:500; cursor:pointer; transition:all .2s; font-family:'Inter',sans-serif; }
+        .tab.active { background:rgba(0,229,255,.1); color:var(--cyan); box-shadow:0 0 0 1px rgba(0,229,255,.2); }
+
+        /* Form panels */
+        .panel { display:none; }
+        .panel.active { display:block; }
+        .panel-title { font-family:'Space Grotesk',sans-serif; font-size:1.6rem; font-weight:700; margin-bottom:4px; }
+        .panel-sub { color:var(--muted); font-size:.88rem; margin-bottom:24px; line-height:1.6; }
+
+        /* Error banner */
+        .error-banner { display:none; align-items:center; gap:10px; padding:12px 16px; border-radius:11px; background:rgba(255,77,109,.07); border:1px solid rgba(255,77,109,.2); color:#ff6b85; font-size:.85rem; margin-bottom:18px; }
+        .error-banner.show { display:flex; }
+
+        /* Google btn */
+        .btn-google { width:100%; padding:13px 20px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); color:var(--text); font-size:.92rem; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:12px; transition:all .2s; font-family:'Inter',sans-serif; text-decoration:none; margin-bottom:20px; }
+        .btn-google:hover { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.2); transform:translateY(-1px); box-shadow:0 4px 16px rgba(0,0,0,.3); }
+        .btn-google:active { transform:translateY(0); }
+        .btn-google.loading { opacity:.7; pointer-events:none; }
+        .g-icon { width:18px; height:18px; flex-shrink:0; }
+
+        /* Divider */
+        .div { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+        .div::before,.div::after { content:''; flex:1; height:1px; background:var(--border); }
+        .div span { color:var(--muted); font-size:.76rem; white-space:nowrap; }
+
+        /* Fields */
+        .field { margin-bottom:16px; position:relative; }
+        .field label { display:block; font-size:.8rem; font-weight:500; color:var(--muted); margin-bottom:6px; }
+        .field input { width:100%; padding:12px 44px 12px 14px; border-radius:11px; background:rgba(255,255,255,.04); border:1px solid var(--border); color:var(--text); font-size:.9rem; font-family:'Inter',sans-serif; transition:all .2s; outline:none; }
+        .field input:focus { border-color:rgba(0,229,255,.35); background:rgba(0,229,255,.04); box-shadow:0 0 0 3px rgba(0,229,255,.08); }
+        .field input.error { border-color:rgba(255,77,109,.4); background:rgba(255,77,109,.04); }
+        .field input::placeholder { color:rgba(255,255,255,.2); }
+        .eye-btn { position:absolute; right:12px; bottom:12px; background:none; border:none; cursor:pointer; color:var(--muted); font-size:16px; padding:0; display:flex; align-items:center; transition:color .2s; }
+        .eye-btn:hover { color:var(--text); }
+
+        /* Password strength */
+        .strength-wrap { margin-top:8px; display:none; }
+        .strength-wrap.show { display:block; }
+        .strength-bar { height:3px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; margin-bottom:4px; }
+        .strength-fill { height:100%; border-radius:2px; transition:width .4s ease, background .3s; }
+        .strength-label { font-size:.72rem; color:var(--muted); }
+
+        /* Submit btn */
+        .btn-submit { width:100%; padding:13px 20px; border-radius:12px; background:linear-gradient(135deg,var(--cyan),#0099cc); color:#080c14; font-size:.95rem; font-weight:700; border:none; cursor:pointer; transition:all .25s; font-family:'Inter',sans-serif; letter-spacing:.02em; margin-top:4px; display:flex; align-items:center; justify-content:center; gap:8px; }
+        .btn-submit:hover { transform:translateY(-1px); box-shadow:0 0 30px rgba(0,229,255,.35); }
+        .btn-submit:active { transform:translateY(0); }
+        .btn-submit.loading { opacity:.7; pointer-events:none; cursor:wait; }
+        .spinner { width:16px; height:16px; border:2px solid rgba(8,12,20,.3); border-top-color:rgba(8,12,20,.9); border-radius:50%; animation:spin .7s linear infinite; display:none; }
+        .btn-submit.loading .spinner { display:inline-block; }
+        @keyframes spin { to{transform:rotate(360deg)} }
+
+        .switch-link { margin-top:16px; text-align:center; font-size:.82rem; color:var(--muted); }
+        .switch-link a { color:var(--cyan); text-decoration:none; }
+        .switch-link a:hover { text-decoration:underline; }
+
+        /* Google not configured warning */
+        .google-warn { display:none; font-size:.76rem; color:var(--gold); text-align:center; margin-top:-12px; margin-bottom:16px; }
+        .google-warn.show { display:block; }
+
+        .terms { margin-top:20px; text-align:center; font-size:.73rem; color:rgba(255,255,255,.22); line-height:1.7; }
+        .terms a { color:rgba(255,255,255,.32); text-decoration:none; }
+
+        /* Toast */
+        #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(60px); background:rgba(20,25,35,.96); border:1px solid var(--border); color:var(--text); padding:12px 24px; border-radius:12px; font-size:.86rem; backdrop-filter:blur(16px); transition:transform .35s cubic-bezier(.34,1.56,.64,1), opacity .3s; opacity:0; z-index:999; white-space:nowrap; pointer-events:none; }
+        #toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
+
+        @media(max-width:760px) { body{flex-direction:column;overflow:auto} .left{display:none} .right{width:100%;border-left:none;padding:28px 20px;min-height:100vh;} }
+    </style>
+</head>
+<body>
+
+<!-- LEFT panel -->
+<div class="left">
+    <div class="left-glow"></div>
+    <div class="left-content">
+        <div class="orb-wrap">
+            <div class="orb-ring"></div><div class="orb-ring"></div><div class="orb-ring"></div>
+            <div class="orb-core"></div>
+            <div class="orb-pts"><div class="orb-pt"></div><div class="orb-pt"></div><div class="orb-pt"></div></div>
+        </div>
+        <div class="left-name">N O V A</div>
+        <p class="left-sub">Your intelligent AI assistant — voice-powered, cloud-smart, and always learning.</p>
+        <div class="feats">
+            <div class="feat"><span>🔀</span><div><strong>Hybrid AI</strong> <span>— routes to the best model automatically</span></div></div>
+            <div class="feat"><span>🎙️</span><div><strong>Voice-first</strong> <span>— speak naturally, no wake words</span></div></div>
+            <div class="feat"><span>🧠</span><div><strong>Memory</strong> <span>— remembers you across every conversation</span></div></div>
+            <div class="feat"><span>⚡</span><div><strong>Streaming</strong> <span>— real-time responses with live TTS</span></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- RIGHT panel -->
+<div class="right">
+<div class="auth-box">
+
+    <a href="/" class="back">← Back to home</a>
+    <a href="/" class="logo"><div class="logo-orb">✦</div><span>NOVA AI</span></a>
+
+    <div class="tabs">
+        <button class="tab active" id="tab-signin" onclick="switchTab('signin')">Sign In</button>
+        <button class="tab" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
+    </div>
+
+    <!-- Error banner (shared) -->
+    <div class="error-banner" id="error-banner">⚠️ <span id="error-text">Something went wrong.</span></div>
+
+    <!-- Google not configured notice -->
+    <div class="google-warn" id="google-warn">⚠️ Google login not configured — add GOOGLE_CLIENT_ID to .env</div>
+
+    <!-- ── SIGN IN ── -->
+    <div class="panel active" id="panel-signin">
+        <div class="panel-title">Welcome back</div>
+        <p class="panel-sub">Sign in to continue your conversation with NOVA.</p>
+
+        <button class="btn-google" id="btn-google-signin" onclick="handleGoogle()">
+            <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Continue with Google
+        </button>
+
+        <div class="div"><span>or sign in with email</span></div>
+
+        <div class="field">
+            <label>Email address</label>
+            <input type="email" id="si-email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="field">
+            <label>Password</label>
+            <input type="password" id="si-pass" placeholder="••••••••" autocomplete="current-password">
+            <button class="eye-btn" type="button" onclick="toggleEye('si-pass', this)" tabindex="-1">👁</button>
+        </div>
+        <button class="btn-submit" id="si-btn" onclick="handleSignIn()">
+            <span class="spinner"></span>
+            <span class="si-label">Sign In to NOVA →</span>
+        </button>
+        <div class="switch-link">Don't have an account? <a href="#" onclick="switchTab('signup');return false;">Sign up free</a></div>
+    </div>
+
+    <!-- ── SIGN UP ── -->
+    <div class="panel" id="panel-signup">
+        <div class="panel-title">Create account</div>
+        <p class="panel-sub">Join NOVA — your intelligent voice companion.</p>
+
+        <button class="btn-google" id="btn-google-signup" onclick="handleGoogle()">
+            <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Sign up with Google
+        </button>
+
+        <div class="div"><span>or create with email</span></div>
+
+        <div class="field">
+            <label>Full name</label>
+            <input type="text" id="su-name" placeholder="Your name" autocomplete="name">
+        </div>
+        <div class="field">
+            <label>Email address</label>
+            <input type="email" id="su-email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="field">
+            <label>Password</label>
+            <input type="password" id="su-pass" placeholder="Create a strong password" autocomplete="new-password" oninput="checkStrength(this.value)">
+            <button class="eye-btn" type="button" onclick="toggleEye('su-pass', this)" tabindex="-1">👁</button>
+            <div class="strength-wrap" id="strength-wrap">
+                <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+                <div class="strength-label" id="strength-label">Too short</div>
+            </div>
+        </div>
+        <button class="btn-submit" id="su-btn" onclick="handleSignUp()">
+            <span class="spinner"></span>
+            <span class="su-label">Create Account →</span>
+        </button>
+        <div class="switch-link">Already have an account? <a href="#" onclick="switchTab('signin');return false;">Sign in</a></div>
+    </div>
+
+    <div class="terms">
+        By continuing you agree to our <a href="#">Terms</a> and <a href="#">Privacy Policy</a>.
+    </div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function showError(msg) {
+    const b = document.getElementById('error-banner');
+    document.getElementById('error-text').textContent = msg;
+    b.classList.add('show');
+    b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function clearError() {
+    document.getElementById('error-banner').classList.remove('show');
+}
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+}
+function setLoading(btnId, loading) {
+    const btn = document.getElementById(btnId);
+    btn.classList.toggle('loading', loading);
+}
+
+// ── Tab switch ─────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+    clearError();
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.getElementById('panel-' + tab).classList.add('active');
+}
+
+// ── Show / hide password ───────────────────────────────────────────────────────
+function toggleEye(inputId, btn) {
+    const inp = document.getElementById(inputId);
+    const isText = inp.type === 'text';
+    inp.type = isText ? 'password' : 'text';
+    btn.textContent = isText ? '👁' : '🙈';
+}
+
+// ── Password strength ──────────────────────────────────────────────────────────
+function checkStrength(val) {
+    const wrap = document.getElementById('strength-wrap');
+    const fill = document.getElementById('strength-fill');
+    const label = document.getElementById('strength-label');
+    if (!val) { wrap.classList.remove('show'); return; }
+    wrap.classList.add('show');
+    let score = 0;
+    if (val.length >= 8)  score++;
+    if (val.length >= 12) score++;
+    if (/[A-Z]/.test(val)) score++;
+    if (/[0-9]/.test(val)) score++;
+    if (/[^A-Za-z0-9]/.test(val)) score++;
+
+    const levels = [
+        { w:'20%', bg:'#ff4d6d', lbl:'Too weak' },
+        { w:'40%', bg:'#ff9900', lbl:'Weak' },
+        { w:'60%', bg:'#f7c742', lbl:'Fair' },
+        { w:'80%', bg:'#00e5ff', lbl:'Good' },
+        { w:'100%', bg:'#00ff88', lbl:'Strong 💪' },
+    ];
+    const lvl = levels[Math.min(score, 4)];
+    fill.style.width = lvl.w;
+    fill.style.background = lvl.bg;
+    label.textContent = lvl.lbl;
+    label.style.color = lvl.bg;
+}
+
+// ── Google OAuth ──────────────────────────────────────────────────────────────
+async function handleGoogle() {
+    // Check if Google is configured by pinging the /auth/me to avoid redirect loops
+    // Then navigate to the OAuth route
+    document.querySelectorAll('.btn-google').forEach(b => b.classList.add('loading'));
+    // Give tiny visual delay so user sees the loading state
+    setTimeout(() => { window.location.href = '/auth/google'; }, 300);
+}
+
+// ── Sign In ───────────────────────────────────────────────────────────────────
+async function handleSignIn() {
+    clearError();
+    const email = document.getElementById('si-email').value.trim();
+    const pass  = document.getElementById('si-pass').value;
+    if (!email) { showError('Please enter your email address.'); document.getElementById('si-email').focus(); return; }
+    if (!pass)  { showError('Please enter your password.'); document.getElementById('si-pass').focus(); return; }
+
+    setLoading('si-btn', true);
+    try {
+        const res = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: pass }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('✅ Welcome back, ' + data.user.name + '!');
+            setTimeout(() => { window.location.href = '/app'; }, 600);
+        } else {
+            showError(data.error || 'Sign in failed.');
+            setLoading('si-btn', false);
+        }
+    } catch {
+        showError('Could not reach server — is NOVA running?');
+        setLoading('si-btn', false);
+    }
+}
+
+// ── Sign Up ────────────────────────────────────────────────────────────────────
+async function handleSignUp() {
+    clearError();
+    const name  = document.getElementById('su-name').value.trim();
+    const email = document.getElementById('su-email').value.trim();
+    const pass  = document.getElementById('su-pass').value;
+    if (!name)         { showError('Please enter your name.'); return; }
+    if (!email)        { showError('Please enter your email address.'); return; }
+    if (pass.length < 6){ showError('Password must be at least 6 characters.'); return; }
+
+    setLoading('su-btn', true);
+    try {
+        const res = await fetch('/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password: pass }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('🎉 Account created! Welcome, ' + data.user.name + '!');
+            setTimeout(() => { window.location.href = '/app'; }, 700);
+        } else {
+            showError(data.error || 'Registration failed.');
+            setLoading('su-btn', false);
+        }
+    } catch {
+        showError('Could not reach server — is NOVA running?');
+        setLoading('su-btn', false);
+    }
+}
+
+// ── Enter key submits ──────────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const active = document.querySelector('.panel.active')?.id;
+    if (active === 'panel-signin') handleSignIn();
+    else if (active === 'panel-signup') handleSignUp();
+});
+
+// ── Handle URL error params (from Google OAuth redirects) ─────────────────────
+const err = new URLSearchParams(location.search).get('error');
+if (err === 'google_not_configured') {
+    document.getElementById('google-warn').classList.add('show');
+} else if (err) {
+    const msgs = {
+        google_cancelled:    'Google sign-in was cancelled.',
+        google_failed:       'Google sign-in failed. Please try again.',
+        google_token_failed: 'Google authentication failed. Please try again.',
+    };
+    showError(msgs[err] || 'Authentication error: ' + err);
+}
+
+// ── Auto-focus first field ─────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+    setTimeout(() => document.getElementById('si-email')?.focus(), 300);
+});
+</script>
+</body>
+</html>
