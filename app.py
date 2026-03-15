@@ -245,10 +245,10 @@ def _call_ollama_cloud(full_prompt: str, stream: bool = False):
             "num_predict": nova_settings["num_predict"],
         }
     }
-    headers = {
-        "Authorization": f"Bearer {nova_settings['ollama_api_key']}",
-        "Content-Type": "application/json",
-    }
+    # Include Authorization header only if an API key is set
+    headers = {"Content-Type": "application/json"}
+    if nova_settings["ollama_api_key"]:
+        headers["Authorization"] = f"Bearer {nova_settings['ollama_api_key']}"
     return requests.post(cloud_url, json=payload, headers=headers,
                          stream=stream, timeout=120)
 
@@ -410,13 +410,13 @@ def chat_stream():
 
         provider = nova_settings["provider"]
         use_groq = provider == "groq" and nova_settings["groq_api_key"]
-        use_ollama_cloud = provider == "ollama_cloud" and nova_settings["ollama_api_key"]
-        use_hybrid = provider == "hybrid" and nova_settings["ollama_api_key"]
+        use_ollama_cloud = provider == "ollama_cloud"  # key check is in _call_ollama_cloud
+        use_hybrid = provider == "hybrid"              # key check is in _call_ollama_cloud
         # Determine the label for the active model
         if use_groq:
             active_model = nova_settings["groq_model"]
         elif use_hybrid:
-            active_model = nova_settings["hybrid_ollama_model"]  # updated per-turn below
+            active_model = nova_settings["hybrid_ollama_model"] or nova_settings["model"] or "mistral"
         else:
             active_model = nova_settings["model"]
 
@@ -427,7 +427,7 @@ def chat_stream():
                     # ─── Hybrid streaming: classify → route → stream ──────────────
                     sub = _classify_query(user_message)
                     print(f"[NOVA] Hybrid stream → {sub}")
-                    used_groq = False
+                    used_cloud = False
                     if sub == "groq" and nova_settings["groq_api_key"]:
                         try:
                             with _call_groq(history, stream=True) as r:
@@ -449,12 +449,12 @@ def chat_stream():
                                             yield f"data: {json.dumps({'token': token})}\n\n"
                                     except (json.JSONDecodeError, IndexError, KeyError):
                                         continue
-                            used_groq = True
+                            used_cloud = True
                         except Exception as exc:
-                            print(f"[NOVA] Hybrid stream Groq failed: {exc}, falling back")
+                            print(f"[NOVA] Hybrid stream Groq failed: {exc}, falling back to Ollama Cloud")
                             full_reply = []
-                    if not used_groq:
-                        # Fallback to Ollama Cloud stream
+                    if not used_cloud:
+                        # Simple query OR Groq fallback → always Ollama Cloud
                         with _call_ollama_cloud(full_prompt, stream=True) as r:
                             for line in r.iter_lines():
                                 if not line:
