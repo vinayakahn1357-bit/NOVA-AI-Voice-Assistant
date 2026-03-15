@@ -229,8 +229,12 @@ def _classify_query(message: str) -> str:
 
 def _call_ollama_cloud(full_prompt: str, stream: bool = False):
     """Helper: call the Ollama Cloud endpoint. Returns requests.Response."""
-    cloud_url = nova_settings["ollama_cloud_url"]
-    model = nova_settings["hybrid_ollama_model"] if nova_settings["provider"] == "hybrid" else nova_settings["model"]
+    cloud_url = nova_settings["ollama_cloud_url"] or "https://api.ollama.com/api/generate"
+    model = (
+        nova_settings["hybrid_ollama_model"]
+        if nova_settings["provider"] == "hybrid"
+        else nova_settings["model"]
+    ) or "mistral"  # safe fallback if setting is empty
     payload = {
         "model": model,
         "prompt": full_prompt,
@@ -255,7 +259,7 @@ def _call_groq(history: list, stream: bool = False, model_override: str = ""):
         nova_settings["hybrid_groq_model"]
         if nova_settings["provider"] == "hybrid"
         else nova_settings["groq_model"]
-    )
+    ) or "llama-3.3-70b-versatile"  # safe fallback if setting is empty
     groq_messages = build_groq_messages(history)
     payload = {
         "model": groq_model,
