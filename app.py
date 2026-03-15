@@ -109,14 +109,25 @@ OLLAMA_URL  = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 # MAX_HISTORY is defined below with the SQLite session helper
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+# ─── Live Mode — when True, Ollama Local is completely disabled ───────────────
+# Set NOVA_LIVE_MODE=true in .env when deploying to a cloud/live server.
+# In this mode, only Ollama Cloud and Groq Cloud are available as providers.
+NOVA_LIVE_MODE = os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes")
+if NOVA_LIVE_MODE:
+    print("[NOVA] Live Mode ENABLED — Ollama Local is disabled. Only cloud providers are active.")
+
 # ─── Global Settings (can be changed via /settings) ──────────────────────────
+_default_provider = os.getenv("NOVA_PROVIDER", "ollama")
+# In live mode, default provider must be a cloud provider
+if NOVA_LIVE_MODE and _default_provider == "ollama":
+    _default_provider = "groq" if os.getenv("GROQ_API_KEY") else "ollama_cloud"
 nova_settings = {
     "model":                os.getenv("OLLAMA_DEFAULT_MODEL", "mistral"),
     "temperature":          float(os.getenv("NOVA_TEMPERATURE", "0.75")),
     "top_p":                float(os.getenv("NOVA_TOP_P", "0.9")),
     "num_predict":          int(os.getenv("NOVA_MAX_TOKENS", "1024")),
     "system_prompt":        DEFAULT_SYSTEM_PROMPT,
-    "provider":             os.getenv("NOVA_PROVIDER", "ollama"),  # "ollama"|"ollama_cloud"|"groq"|"hybrid"
+    "provider":             _default_provider,  # "ollama"|"ollama_cloud"|"groq"|"hybrid"
     "groq_api_key":         os.getenv("GROQ_API_KEY", ""),
     "groq_model":           os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
     # ── Ollama Cloud (remote Ollama endpoint with API key) ──────────────────
@@ -324,13 +335,15 @@ def chat():
         # ─── Provider dispatch ────────────────────────────────────────────
         # Guard: if hybrid/ollama_cloud is selected but the Ollama Cloud URL
         # is the default placeholder (api.ollama.com) which is not a real API,
-        # automatically redirect to Groq if a key is available.
+        # automatically redirect to Groq or Ollama local.
         if provider in ("hybrid", "ollama_cloud") and not _ollama_cloud_configured():
             if nova_settings["groq_api_key"]:
                 print(f"[NOVA] {provider} → Ollama Cloud not configured; falling back to Groq")
                 provider = "groq"
+            elif not NOVA_LIVE_MODE:
+                provider = "ollama"  # last resort: try local (only when NOT in live mode)
             else:
-                provider = "ollama"  # last resort: try local
+                return jsonify({"error": "No cloud AI provider configured. Set a Groq API key or a valid Ollama Cloud URL.", "code": "NO_CLOUD_PROVIDER"}), 503
 
         if provider == "hybrid":
             # Hybrid: route by complexity
@@ -440,8 +453,13 @@ def chat_stream():
             if nova_settings["groq_api_key"]:
                 print(f"[NOVA] Stream {provider} → Ollama Cloud not configured; falling back to Groq")
                 provider = "groq"
+            elif not NOVA_LIVE_MODE:
+                provider = "ollama"  # last resort: try local (only when NOT in live mode)
             else:
-                provider = "ollama"
+                def _err_gen():
+                    yield f"data: {json.dumps({'error': 'No cloud AI provider configured. Set a Groq API key or a valid Ollama Cloud URL.'})}\n\n"
+                return Response(stream_with_context(_err_gen()), mimetype="text/event-stream",
+                                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         use_groq = provider == "groq" and nova_settings["groq_api_key"]
         use_ollama_cloud = provider == "ollama_cloud"  # key check is in _call_ollama_cloud
         use_hybrid = provider == "hybrid"              # key check is in _call_ollama_cloud
@@ -694,6 +712,8 @@ def settings():
             "ollama_cloud_url":     nova_settings["ollama_cloud_url"],
             "hybrid_ollama_model":  nova_settings["hybrid_ollama_model"],
             "hybrid_groq_model":    nova_settings["hybrid_groq_model"],
+            # ── Live Mode flag — tells UI to hide Ollama Local option ───────
+            "live_mode":            NOVA_LIVE_MODE,
         })
 
     data = request.get_json() or {}
@@ -708,8 +728,13 @@ def settings():
     if "system_prompt" in data:
         sp = data["system_prompt"].strip()
         nova_settings["system_prompt"] = sp if sp else DEFAULT_SYSTEM_PROMPT
-    if "provider" in data and data["provider"] in ("ollama", "ollama_cloud", "groq", "hybrid"):
-        nova_settings["provider"] = data["provider"]
+    if "provider" in data:
+        requested = data["provider"]
+        allowed = ("ollama_cloud", "groq", "hybrid") if NOVA_LIVE_MODE else ("ollama", "ollama_cloud", "groq", "hybrid")
+        if requested in allowed:
+            nova_settings["provider"] = requested
+        elif NOVA_LIVE_MODE and requested == "ollama":
+            print(f"[NOVA] Rejected provider 'ollama' — live mode is active")
     if "groq_api_key" in data:
         key = str(data["groq_api_key"]).strip()
         if key and not key.startswith("****"):

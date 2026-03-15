@@ -1416,11 +1416,23 @@ const DEFAULT_SETTINGS = {
     num_predict: 1024,
     system_prompt: '',
     stream_mode: true,
-    provider: 'groq',
+    provider: 'hybrid',
 };
 
 function openSettings() {
     loadSettingsIntoUI();
+    // Fetch backend live_mode to show/hide Ollama Local option
+    fetch('/settings').then(r => r.json()).then(data => {
+        novaLiveMode = data.live_mode === true;
+        const ollamaLocalBtn = document.getElementById('provider-ollama');
+        if (ollamaLocalBtn) {
+            ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
+        }
+        // If currently set to local ollama in live mode, switch to hybrid
+        if (novaLiveMode && currentProvider === 'ollama') {
+            setProvider('hybrid');
+        }
+    }).catch(() => {});
     document.getElementById('settings-overlay').classList.add('open');
 }
 
@@ -1438,11 +1450,14 @@ function setStreamMode(val) {
     document.getElementById('mode-full').classList.toggle('active', !val);
 }
 
-let currentProvider = 'groq';
+let currentProvider = 'hybrid';
+let novaLiveMode = false; // set from backend /settings live_mode flag
 
 function setProvider(p) {
     currentProvider = p;
-    document.getElementById('provider-ollama').classList.toggle('active', p === 'ollama');
+    // Guard: provider-ollama may be hidden in live mode
+    const ollamaBtn = document.getElementById('provider-ollama');
+    if (ollamaBtn) ollamaBtn.classList.toggle('active', p === 'ollama');
     document.getElementById('provider-ollama-cloud').classList.toggle('active', p === 'ollama_cloud');
     document.getElementById('provider-groq').classList.toggle('active', p === 'groq');
     document.getElementById('provider-hybrid').classList.toggle('active', p === 'hybrid');
@@ -1468,7 +1483,7 @@ function loadSettingsIntoUI() {
     setStreamMode(s.stream_mode !== false);
 
     // Provider fields
-    setProvider(s.provider || 'ollama');
+    setProvider(s.provider || 'hybrid');
     // Groq
     const groqKeyEl = document.getElementById('settings-groq-key');
     if (groqKeyEl && s.groq_api_key) groqKeyEl.value = s.groq_api_key;
@@ -1572,29 +1587,27 @@ async function resetSettings() {
 async function applySavedSettings() {
     const saved = JSON.parse(localStorage.getItem('nova_settings') || '{}');
 
-    // ── Auto-migrate stale providers that require non-existent Ollama Cloud ──────
-    // 'ollama_cloud' and 'hybrid' both need https://api.ollama.com which is not a
-    // real public API. Silently fall back to groq if the user has no real Ollama
-    // Cloud key or the key looks like the placeholder value.
-    const FAKE_OLLAMA_CLOUD = 'api.ollama.com';
-    const staleProviders = ['ollama_cloud', 'hybrid'];
-    if (staleProviders.includes(saved.provider)) {
-        const hasRealOllamaKey = saved.ollama_api_key &&
-            !saved.ollama_api_key.startsWith('****') &&
-            saved.ollama_api_key.length > 10;
-        const isDefaultUrl = !saved.ollama_cloud_url ||
-            saved.ollama_cloud_url.includes(FAKE_OLLAMA_CLOUD);
-        if (!hasRealOllamaKey || isDefaultUrl) {
-            // Migrate to groq (already have Groq key from backend .env)
-            saved.provider = 'groq';
-            localStorage.setItem('nova_settings', JSON.stringify(saved));
-            console.info('[NOVA] Migrated stale provider to groq (Ollama Cloud unavailable)');
+    // ── Fetch live_mode from backend to know if Ollama Local is allowed ─────────
+    try {
+        const r = await fetch('/settings');
+        if (r.ok) {
+            const backendSettings = await r.json();
+            novaLiveMode = backendSettings.live_mode === true;
+            // In live mode, hide Ollama Local button immediately
+            const ollamaLocalBtn = document.getElementById('provider-ollama');
+            if (ollamaLocalBtn) ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
+            // If localStorage has ollama (local) provider but we're in live mode, upgrade to hybrid
+            if (novaLiveMode && saved.provider === 'ollama') {
+                saved.provider = 'hybrid';
+                localStorage.setItem('nova_settings', JSON.stringify(saved));
+                console.info('[NOVA] Live mode: upgraded local ollama provider to hybrid');
+            }
         }
-    }
+    } catch { }
 
     if (!saved.model && !saved.temperature && !saved.provider) return;
     isStreamMode = saved.stream_mode !== false;
-    currentProvider = saved.provider || 'groq';
+    currentProvider = saved.provider || 'hybrid';
     try {
         await fetch('/settings', {
             method: 'POST',
