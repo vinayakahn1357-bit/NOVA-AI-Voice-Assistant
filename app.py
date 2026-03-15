@@ -127,6 +127,22 @@ nova_settings = {
     "hybrid_groq_model":    os.getenv("NOVA_HYBRID_GROQ_MODEL", "llama-3.3-70b-versatile"),
 }
 
+# ─── Ollama Cloud Sanity Check ────────────────────────────────────────────────
+_FAKE_OLLAMA_DOMAINS = ("api.ollama.com",)
+
+def _ollama_cloud_configured() -> bool:
+    """
+    Return True only when we have a non-empty Ollama API key AND the cloud URL
+    does NOT point to a known fake/non-existent public endpoint.
+    """
+    key = nova_settings.get("ollama_api_key", "")
+    url = nova_settings.get("ollama_cloud_url", "")
+    if not key:
+        return False
+    if any(domain in url for domain in _FAKE_OLLAMA_DOMAINS):
+        return False
+    return True
+
 # ─── Per-Session Conversation History (SQLite) ────────────────────────────────
 MAX_HISTORY = int(os.getenv("NOVA_MAX_HISTORY", "30"))
 
@@ -306,7 +322,17 @@ def chat():
         provider = nova_settings["provider"]
 
         # ─── Provider dispatch ────────────────────────────────────────────
-        if provider == "hybrid" and nova_settings["ollama_api_key"]:
+        # Guard: if hybrid/ollama_cloud is selected but the Ollama Cloud URL
+        # is the default placeholder (api.ollama.com) which is not a real API,
+        # automatically redirect to Groq if a key is available.
+        if provider in ("hybrid", "ollama_cloud") and not _ollama_cloud_configured():
+            if nova_settings["groq_api_key"]:
+                print(f"[NOVA] {provider} → Ollama Cloud not configured; falling back to Groq")
+                provider = "groq"
+            else:
+                provider = "ollama"  # last resort: try local
+
+        if provider == "hybrid":
             # Hybrid: route by complexity
             sub = _classify_query(user_message)
             print(f"[NOVA] Hybrid → {sub} ({len(user_message.split())} words)")
@@ -409,6 +435,13 @@ def chat_stream():
         full_prompt = build_prompt(history)
 
         provider = nova_settings["provider"]
+        # Guard: redirect hybrid/ollama_cloud to groq if Ollama Cloud is misconfigured
+        if provider in ("hybrid", "ollama_cloud") and not _ollama_cloud_configured():
+            if nova_settings["groq_api_key"]:
+                print(f"[NOVA] Stream {provider} → Ollama Cloud not configured; falling back to Groq")
+                provider = "groq"
+            else:
+                provider = "ollama"
         use_groq = provider == "groq" and nova_settings["groq_api_key"]
         use_ollama_cloud = provider == "ollama_cloud"  # key check is in _call_ollama_cloud
         use_hybrid = provider == "hybrid"              # key check is in _call_ollama_cloud

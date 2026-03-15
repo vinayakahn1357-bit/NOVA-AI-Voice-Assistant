@@ -1411,11 +1411,12 @@ async function loadAvailableModels() {
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
-    model: 'mistral',
+    model: 'llama-3.3-70b-versatile',
     temperature: 0.75,
     num_predict: 1024,
     system_prompt: '',
     stream_mode: true,
+    provider: 'groq',
 };
 
 function openSettings() {
@@ -1437,7 +1438,7 @@ function setStreamMode(val) {
     document.getElementById('mode-full').classList.toggle('active', !val);
 }
 
-let currentProvider = 'ollama';
+let currentProvider = 'groq';
 
 function setProvider(p) {
     currentProvider = p;
@@ -1560,7 +1561,7 @@ async function resetSettings() {
                 temperature: DEFAULT_SETTINGS.temperature,
                 num_predict: DEFAULT_SETTINGS.num_predict,
                 system_prompt: '',
-                provider: 'ollama',
+                provider: 'groq',
             }),
         });
     } catch { }
@@ -1570,9 +1571,30 @@ async function resetSettings() {
 
 async function applySavedSettings() {
     const saved = JSON.parse(localStorage.getItem('nova_settings') || '{}');
+
+    // ── Auto-migrate stale providers that require non-existent Ollama Cloud ──────
+    // 'ollama_cloud' and 'hybrid' both need https://api.ollama.com which is not a
+    // real public API. Silently fall back to groq if the user has no real Ollama
+    // Cloud key or the key looks like the placeholder value.
+    const FAKE_OLLAMA_CLOUD = 'api.ollama.com';
+    const staleProviders = ['ollama_cloud', 'hybrid'];
+    if (staleProviders.includes(saved.provider)) {
+        const hasRealOllamaKey = saved.ollama_api_key &&
+            !saved.ollama_api_key.startsWith('****') &&
+            saved.ollama_api_key.length > 10;
+        const isDefaultUrl = !saved.ollama_cloud_url ||
+            saved.ollama_cloud_url.includes(FAKE_OLLAMA_CLOUD);
+        if (!hasRealOllamaKey || isDefaultUrl) {
+            // Migrate to groq (already have Groq key from backend .env)
+            saved.provider = 'groq';
+            localStorage.setItem('nova_settings', JSON.stringify(saved));
+            console.info('[NOVA] Migrated stale provider to groq (Ollama Cloud unavailable)');
+        }
+    }
+
     if (!saved.model && !saved.temperature && !saved.provider) return;
     isStreamMode = saved.stream_mode !== false;
-    currentProvider = saved.provider || 'ollama';
+    currentProvider = saved.provider || 'groq';
     try {
         await fetch('/settings', {
             method: 'POST',
@@ -1582,7 +1604,7 @@ async function applySavedSettings() {
                 temperature: saved.temperature || DEFAULT_SETTINGS.temperature,
                 num_predict: saved.num_predict || DEFAULT_SETTINGS.num_predict,
                 system_prompt: saved.system_prompt || '',
-                provider: saved.provider || 'ollama',
+                provider: saved.provider || 'groq',
                 groq_api_key: saved.groq_api_key || '',
                 groq_model: saved.groq_model || 'llama-3.3-70b-versatile',
                 ollama_api_key: saved.ollama_api_key || '',
