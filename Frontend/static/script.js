@@ -1454,10 +1454,16 @@ let currentProvider = 'hybrid';
 let novaLiveMode = false; // set from backend /settings live_mode flag
 
 function setProvider(p) {
+    // In live mode, never allow Ollama local
+    if (novaLiveMode && p === 'ollama') p = 'hybrid';
     currentProvider = p;
-    // Guard: provider-ollama may be hidden in live mode
+    // Guard: provider-ollama is hidden by default in live mode
     const ollamaBtn = document.getElementById('provider-ollama');
-    if (ollamaBtn) ollamaBtn.classList.toggle('active', p === 'ollama');
+    if (ollamaBtn) {
+        // Only show Ollama Local button if NOT in live mode
+        if (!novaLiveMode) ollamaBtn.style.display = '';
+        ollamaBtn.classList.toggle('active', p === 'ollama');
+    }
     document.getElementById('provider-ollama-cloud').classList.toggle('active', p === 'ollama_cloud');
     document.getElementById('provider-groq').classList.toggle('active', p === 'groq');
     document.getElementById('provider-hybrid').classList.toggle('active', p === 'hybrid');
@@ -1482,8 +1488,9 @@ function loadSettingsIntoUI() {
     document.getElementById('settings-system-prompt').value = s.system_prompt;
     setStreamMode(s.stream_mode !== false);
 
-    // Provider fields
-    setProvider(s.provider || 'hybrid');
+    // Provider fields — upgrade 'ollama' to 'hybrid' if live mode is active
+    const savedProvider = (novaLiveMode && s.provider === 'ollama') ? 'hybrid' : (s.provider || 'hybrid');
+    setProvider(savedProvider);
     // Groq
     const groqKeyEl = document.getElementById('settings-groq-key');
     if (groqKeyEl && s.groq_api_key) groqKeyEl.value = s.groq_api_key;
