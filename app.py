@@ -456,19 +456,34 @@ def chat_stream():
                     if not used_cloud:
                         # Simple query OR Groq fallback → always Ollama Cloud
                         with _call_ollama_cloud(full_prompt, stream=True) as r:
-                            for line in r.iter_lines():
-                                if not line:
-                                    continue
-                                try:
-                                    chunk = json.loads(line)
-                                    token = chunk.get("response", "")
-                                    if token:
-                                        full_reply.append(token)
-                                        yield f"data: {json.dumps({'token': token})}\n\n"
-                                    if chunk.get("done"):
-                                        break
-                                except json.JSONDecodeError:
-                                    continue
+                            if r.status_code != 200:
+                                # Emit readable error so the bubble isn't blank
+                                err_body = r.text[:300]
+                                print(f"[NOVA] Hybrid Ollama Cloud error {r.status_code}: {err_body}")
+                                err_msg = f"Ollama Cloud error ({r.status_code}): {err_body}"
+                                yield f"data: {json.dumps({'token': err_msg})}\n\n"
+                                full_reply.append(err_msg)
+                            else:
+                                for line in r.iter_lines():
+                                    if not line:
+                                        continue
+                                    try:
+                                        chunk = json.loads(line)
+                                        # Check if Ollama returned an error JSON
+                                        if chunk.get("error"):
+                                            err_msg = f"Ollama Cloud model error: {chunk['error']}"
+                                            print(f"[NOVA] {err_msg}")
+                                            yield f"data: {json.dumps({'token': err_msg})}\n\n"
+                                            full_reply.append(err_msg)
+                                            break
+                                        token = chunk.get("response", "")
+                                        if token:
+                                            full_reply.append(token)
+                                            yield f"data: {json.dumps({'token': token})}\n\n"
+                                        if chunk.get("done"):
+                                            break
+                                    except json.JSONDecodeError:
+                                        continue
                     complete_reply = "".join(full_reply).strip()
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
