@@ -510,6 +510,8 @@ def auth_google_callback():
         "grant_type":    "authorization_code",
     })
     if not token_res.ok:
+        print(f"[NOVA] Google token exchange FAILED: {token_res.status_code} — {token_res.text}")
+        print(f"[NOVA] Used redirect_uri: {redirect_uri}")
         return redirect("/login?error=google_token_failed")
 
     id_token_str = token_res.json().get("access_token", "")
