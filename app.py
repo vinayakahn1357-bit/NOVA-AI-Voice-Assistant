@@ -111,14 +111,20 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # ─── Global Settings (can be changed via /settings) ──────────────────────────
 nova_settings = {
-    "model":       os.getenv("OLLAMA_DEFAULT_MODEL", "mistral"),
-    "temperature": float(os.getenv("NOVA_TEMPERATURE", "0.75")),
-    "top_p":       float(os.getenv("NOVA_TOP_P", "0.9")),
-    "num_predict": int(os.getenv("NOVA_MAX_TOKENS", "1024")),
-    "system_prompt": DEFAULT_SYSTEM_PROMPT,
-    "provider":    os.getenv("NOVA_PROVIDER", "ollama"),        # "ollama" or "groq"
-    "groq_api_key": os.getenv("GROQ_API_KEY", ""),
-    "groq_model":  os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    "model":                os.getenv("OLLAMA_DEFAULT_MODEL", "mistral"),
+    "temperature":          float(os.getenv("NOVA_TEMPERATURE", "0.75")),
+    "top_p":                float(os.getenv("NOVA_TOP_P", "0.9")),
+    "num_predict":          int(os.getenv("NOVA_MAX_TOKENS", "1024")),
+    "system_prompt":        DEFAULT_SYSTEM_PROMPT,
+    "provider":             os.getenv("NOVA_PROVIDER", "ollama"),  # "ollama"|"ollama_cloud"|"groq"|"hybrid"
+    "groq_api_key":         os.getenv("GROQ_API_KEY", ""),
+    "groq_model":           os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    # ── Ollama Cloud (remote Ollama endpoint with API key) ──────────────────
+    "ollama_api_key":       os.getenv("OLLAMA_API_KEY", ""),
+    "ollama_cloud_url":     os.getenv("OLLAMA_CLOUD_URL", "https://api.ollama.com/api/generate"),
+    # ── Hybrid mode — per-sub-provider model choices ────────────────────────
+    "hybrid_ollama_model":  os.getenv("NOVA_HYBRID_OLLAMA_MODEL", "mistral"),
+    "hybrid_groq_model":    os.getenv("NOVA_HYBRID_GROQ_MODEL", "llama-3.3-70b-versatile"),
 }
 
 # ─── Per-Session Conversation History (SQLite) ────────────────────────────────
@@ -183,6 +189,90 @@ def build_groq_messages(history: list) -> list:
     return messages
 
 
+# ─── Hybrid Query Classifier ──────────────────────────────────────────────────
+_COMPLEX_KEYWORDS = (
+    # Code & technical
+    "def ", "function ", "class ", "import ", "```", "code", "debug", "error",
+    "bug", "implement", "algorithm", "write a ", "create a ", "build a ",
+    "program", "script", "api", "database", "sql", "regex",
+    # Math & reasoning
+    "math", "calculate", "solve", "equation", "prove", "integral",
+    "derivative", "matrix", "statistics", "probability",
+    # Analysis & writing
+    "analyze", "analyse", "summarize", "summarise", "essay", "detailed",
+    "comprehensive", "explain why", "compare", "difference between",
+    "pros and cons", "advantages", "disadvantages", "research",
+    "translate", "rewrite", "refactor",
+)
+_COMPLEX_WORD_THRESHOLD  = 60   # > 60 words → use Groq
+_SIMPLE_WORD_THRESHOLD   = 30   # ≤ 30 words AND no keywords → use Ollama Cloud
+
+def _classify_query(message: str) -> str:
+    """
+    Returns 'groq' for complex queries, 'ollama_cloud' for simple ones.
+    Used only when provider == 'hybrid'.
+    """
+    lower = message.lower()
+    word_count = len(message.split())
+
+    # Always use Groq for long messages
+    if word_count > _COMPLEX_WORD_THRESHOLD:
+        return "groq"
+
+    # Check for complex keywords regardless of length
+    if any(kw in lower for kw in _COMPLEX_KEYWORDS):
+        return "groq"
+
+    # Short, conversational → Ollama Cloud (fast & cheap)
+    return "ollama_cloud"
+
+
+def _call_ollama_cloud(full_prompt: str, stream: bool = False):
+    """Helper: call the Ollama Cloud endpoint. Returns requests.Response."""
+    cloud_url = nova_settings["ollama_cloud_url"]
+    model = nova_settings["hybrid_ollama_model"] if nova_settings["provider"] == "hybrid" else nova_settings["model"]
+    payload = {
+        "model": model,
+        "prompt": full_prompt,
+        "stream": stream,
+        "options": {
+            "temperature": nova_settings["temperature"],
+            "top_p":       nova_settings["top_p"],
+            "num_predict": nova_settings["num_predict"],
+        }
+    }
+    headers = {
+        "Authorization": f"Bearer {nova_settings['ollama_api_key']}",
+        "Content-Type": "application/json",
+    }
+    return requests.post(cloud_url, json=payload, headers=headers,
+                         stream=stream, timeout=120)
+
+
+def _call_groq(history: list, stream: bool = False, model_override: str = ""):
+    """Helper: call the Groq API. Returns requests.Response."""
+    groq_model = model_override or (
+        nova_settings["hybrid_groq_model"]
+        if nova_settings["provider"] == "hybrid"
+        else nova_settings["groq_model"]
+    )
+    groq_messages = build_groq_messages(history)
+    payload = {
+        "model": groq_model,
+        "messages": groq_messages,
+        "temperature": nova_settings["temperature"],
+        "max_tokens": nova_settings["num_predict"],
+        "top_p": nova_settings["top_p"],
+        "stream": stream,
+    }
+    headers = {
+        "Authorization": f"Bearer {nova_settings['groq_api_key']}",
+        "Content-Type": "application/json",
+    }
+    return requests.post(GROQ_API_URL, json=payload, headers=headers,
+                         stream=stream, timeout=60)
+
+
 # ─── Serve Frontend ───────────────────────────────────────────────────────────
 @app.route("/")
 def serve_index():
@@ -209,31 +299,47 @@ def chat():
 
         full_prompt = build_prompt(history)
 
-        # ─── Provider dispatch ────────────────────────────────────────────
-        if nova_settings["provider"] == "groq" and nova_settings["groq_api_key"]:
-            # Groq Cloud API (OpenAI-compatible)
-            groq_messages = build_groq_messages(history)
-            groq_payload = {
-                "model": nova_settings["groq_model"],
-                "messages": groq_messages,
-                "temperature": nova_settings["temperature"],
-                "max_tokens": nova_settings["num_predict"],
-                "top_p": nova_settings["top_p"],
-                "stream": False,
-            }
-            groq_headers = {
-                "Authorization": f"Bearer {nova_settings['groq_api_key']}",
-                "Content-Type": "application/json",
-            }
-            response = requests.post(GROQ_API_URL, json=groq_payload,
-                                     headers=groq_headers, timeout=60)
-            if response.status_code != 200:
-                err_detail = response.json().get("error", {}).get("message", "Groq API error")
-                return jsonify({"error": err_detail, "code": "GROQ_ERROR"}), 500
+        provider = nova_settings["provider"]
 
-            ai_response = response.json()["choices"][0]["message"]["content"].strip()
+        # ─── Provider dispatch ────────────────────────────────────────────
+        if provider == "hybrid" and nova_settings["ollama_api_key"]:
+            # Hybrid: route by complexity
+            sub = _classify_query(user_message)
+            print(f"[NOVA] Hybrid → {sub} ({len(user_message.split())} words)")
+            ai_response = ""
+            if sub == "groq" and nova_settings["groq_api_key"]:
+                try:
+                    r = _call_groq(history)
+                    if r.status_code == 200:
+                        ai_response = r.json()["choices"][0]["message"]["content"].strip()
+                    else:
+                        print(f"[NOVA] Hybrid Groq failed ({r.status_code}), falling back to Ollama Cloud")
+                except Exception as exc:
+                    print(f"[NOVA] Hybrid Groq exception: {exc}, falling back to Ollama Cloud")
+            # Fallback to Ollama Cloud (also used for simple queries)
+            if not ai_response:
+                r = _call_ollama_cloud(full_prompt)
+                if r.status_code != 200:
+                    return jsonify({"error": "Ollama Cloud error in hybrid mode", "code": "HYBRID_ERROR"}), 500
+                ai_response = r.json().get("response", "").strip()
+
+        elif provider == "groq" and nova_settings["groq_api_key"]:
+            # Groq Cloud only
+            r = _call_groq(history, model_override=nova_settings["groq_model"])
+            if r.status_code != 200:
+                err_detail = r.json().get("error", {}).get("message", "Groq API error")
+                return jsonify({"error": err_detail, "code": "GROQ_ERROR"}), 500
+            ai_response = r.json()["choices"][0]["message"]["content"].strip()
+
+        elif provider == "ollama_cloud" and nova_settings["ollama_api_key"]:
+            # Ollama Cloud only
+            r = _call_ollama_cloud(full_prompt)
+            if r.status_code != 200:
+                return jsonify({"error": f"Ollama Cloud error: {r.text[:200]}", "code": "OLLAMA_CLOUD_ERROR"}), 500
+            ai_response = r.json().get("response", "").strip()
+
         else:
-            # Ollama Local API
+            # Ollama Local API (default fallback)
             payload = {
                 "model": nova_settings["model"],
                 "prompt": full_prompt,
@@ -260,14 +366,14 @@ def chat():
 
         # ── Learning: offload to background thread pool (non-blocking) ───────
         bg_pool.submit(memory.record_conversation)
-        bg_pool.submit(memory.extract_and_store,
-                       user_message, ai_response, nova_settings.get("groq_model") if nova_settings["provider"] == "groq" else nova_settings["model"])
+        active_model = nova_settings["groq_model"] if provider == "groq" else nova_settings["model"]
+        bg_pool.submit(memory.extract_and_store, user_message, ai_response, active_model)
 
         return jsonify({
             "reply": ai_response,
             "session_id": session_id,
-            "model": nova_settings["groq_model"] if nova_settings["provider"] == "groq" else nova_settings["model"],
-            "provider": nova_settings["provider"],
+            "model": active_model,
+            "provider": provider,
         })
 
     except requests.exceptions.ConnectionError:
@@ -298,13 +404,76 @@ def chat_stream():
 
         full_prompt = build_prompt(history)
 
-        use_groq = nova_settings["provider"] == "groq" and nova_settings["groq_api_key"]
-        active_model = nova_settings["groq_model"] if use_groq else nova_settings["model"]
+        provider = nova_settings["provider"]
+        use_groq = provider == "groq" and nova_settings["groq_api_key"]
+        use_ollama_cloud = provider == "ollama_cloud" and nova_settings["ollama_api_key"]
+        use_hybrid = provider == "hybrid" and nova_settings["ollama_api_key"]
+        # Determine the label for the active model
+        if use_groq:
+            active_model = nova_settings["groq_model"]
+        elif use_hybrid:
+            active_model = nova_settings["hybrid_ollama_model"]  # updated per-turn below
+        else:
+            active_model = nova_settings["model"]
 
         def generate():
             full_reply = []
             try:
-                if use_groq:
+                if use_hybrid:
+                    # ─── Hybrid streaming: classify → route → stream ──────────────
+                    sub = _classify_query(user_message)
+                    print(f"[NOVA] Hybrid stream → {sub}")
+                    used_groq = False
+                    if sub == "groq" and nova_settings["groq_api_key"]:
+                        try:
+                            with _call_groq(history, stream=True) as r:
+                                for line in r.iter_lines():
+                                    if not line:
+                                        continue
+                                    line_str = line.decode("utf-8", errors="ignore")
+                                    if not line_str.startswith("data: "):
+                                        continue
+                                    data_str = line_str[6:]
+                                    if data_str.strip() == "[DONE]":
+                                        break
+                                    try:
+                                        chunk = json.loads(data_str)
+                                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                        token = delta.get("content", "")
+                                        if token:
+                                            full_reply.append(token)
+                                            yield f"data: {json.dumps({'token': token})}\n\n"
+                                    except (json.JSONDecodeError, IndexError, KeyError):
+                                        continue
+                            used_groq = True
+                        except Exception as exc:
+                            print(f"[NOVA] Hybrid stream Groq failed: {exc}, falling back")
+                            full_reply = []
+                    if not used_groq:
+                        # Fallback to Ollama Cloud stream
+                        with _call_ollama_cloud(full_prompt, stream=True) as r:
+                            for line in r.iter_lines():
+                                if not line:
+                                    continue
+                                try:
+                                    chunk = json.loads(line)
+                                    token = chunk.get("response", "")
+                                    if token:
+                                        full_reply.append(token)
+                                        yield f"data: {json.dumps({'token': token})}\n\n"
+                                    if chunk.get("done"):
+                                        break
+                                except json.JSONDecodeError:
+                                    continue
+                    complete_reply = "".join(full_reply).strip()
+                    if complete_reply:
+                        append_message(session_id, "nova", complete_reply)
+                        bg_pool.submit(memory.record_conversation)
+                        bg_pool.submit(memory.extract_and_store,
+                                       user_message, complete_reply, active_model)
+                    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+
+                elif use_groq:
                     # ─── Groq Cloud streaming (OpenAI SSE format) ────────
                     groq_messages = build_groq_messages(history)
                     groq_payload = {
@@ -339,7 +508,6 @@ def chat_stream():
                                     yield f"data: {json.dumps({'token': token})}\n\n"
                             except (json.JSONDecodeError, IndexError, KeyError):
                                 continue
-                    # Done
                     complete_reply = "".join(full_reply).strip()
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
@@ -347,6 +515,30 @@ def chat_stream():
                         bg_pool.submit(memory.extract_and_store,
                                        user_message, complete_reply, active_model)
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+
+                elif use_ollama_cloud:
+                    # ─── Ollama Cloud streaming ──────────────────────────
+                    with _call_ollama_cloud(full_prompt, stream=True) as r:
+                        for line in r.iter_lines():
+                            if not line:
+                                continue
+                            try:
+                                chunk = json.loads(line)
+                                token = chunk.get("response", "")
+                                if token:
+                                    full_reply.append(token)
+                                    yield f"data: {json.dumps({'token': token})}\n\n"
+                                if chunk.get("done"):
+                                    complete_reply = "".join(full_reply).strip()
+                                    append_message(session_id, "nova", complete_reply)
+                                    bg_pool.submit(memory.record_conversation)
+                                    bg_pool.submit(memory.extract_and_store,
+                                                   user_message, complete_reply, active_model)
+                                    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                                    break
+                            except json.JSONDecodeError:
+                                continue
+
                 else:
                     # ─── Ollama Local streaming ──────────────────────────
                     payload = {
@@ -434,19 +626,22 @@ def generate_summary():
 def settings():
     global nova_settings
     if request.method == "GET":
-        # Mask the API key for security (show last 4 chars only)
-        masked_key = ""
-        if nova_settings["groq_api_key"]:
-            masked_key = "****" + nova_settings["groq_api_key"][-4:]
+        # Mask API keys — show last 4 chars only
+        def _mask(key):
+            return ("****" + key[-4:]) if key else ""
         return jsonify({
-            "model": nova_settings["model"],
-            "temperature": nova_settings["temperature"],
-            "top_p": nova_settings["top_p"],
-            "num_predict": nova_settings["num_predict"],
-            "system_prompt": nova_settings["system_prompt"],
-            "provider": nova_settings["provider"],
-            "groq_api_key": masked_key,
-            "groq_model": nova_settings["groq_model"],
+            "model":                nova_settings["model"],
+            "temperature":          nova_settings["temperature"],
+            "top_p":                nova_settings["top_p"],
+            "num_predict":          nova_settings["num_predict"],
+            "system_prompt":        nova_settings["system_prompt"],
+            "provider":             nova_settings["provider"],
+            "groq_api_key":         _mask(nova_settings["groq_api_key"]),
+            "groq_model":           nova_settings["groq_model"],
+            "ollama_api_key":       _mask(nova_settings["ollama_api_key"]),
+            "ollama_cloud_url":     nova_settings["ollama_cloud_url"],
+            "hybrid_ollama_model":  nova_settings["hybrid_ollama_model"],
+            "hybrid_groq_model":    nova_settings["hybrid_groq_model"],
         })
 
     data = request.get_json() or {}
@@ -461,20 +656,34 @@ def settings():
     if "system_prompt" in data:
         sp = data["system_prompt"].strip()
         nova_settings["system_prompt"] = sp if sp else DEFAULT_SYSTEM_PROMPT
-    if "provider" in data and data["provider"] in ("ollama", "groq"):
+    if "provider" in data and data["provider"] in ("ollama", "ollama_cloud", "groq", "hybrid"):
         nova_settings["provider"] = data["provider"]
     if "groq_api_key" in data:
         key = str(data["groq_api_key"]).strip()
-        # Only update if it's a real key (not the masked version)
         if key and not key.startswith("****"):
             nova_settings["groq_api_key"] = key
     if "groq_model" in data:
         nova_settings["groq_model"] = str(data["groq_model"])
+    if "ollama_api_key" in data:
+        key = str(data["ollama_api_key"]).strip()
+        if key and not key.startswith("****"):
+            nova_settings["ollama_api_key"] = key
+    if "ollama_cloud_url" in data:
+        url = str(data["ollama_cloud_url"]).strip()
+        if url:
+            nova_settings["ollama_cloud_url"] = url
+    if "hybrid_ollama_model" in data:
+        nova_settings["hybrid_ollama_model"] = str(data["hybrid_ollama_model"])
+    if "hybrid_groq_model" in data:
+        nova_settings["hybrid_groq_model"] = str(data["hybrid_groq_model"])
 
     return jsonify({"status": "ok", "settings": {
-        "provider": nova_settings["provider"],
-        "model": nova_settings["model"],
-        "groq_model": nova_settings["groq_model"],
+        "provider":             nova_settings["provider"],
+        "model":                nova_settings["model"],
+        "groq_model":           nova_settings["groq_model"],
+        "ollama_cloud_url":     nova_settings["ollama_cloud_url"],
+        "hybrid_ollama_model":  nova_settings["hybrid_ollama_model"],
+        "hybrid_groq_model":    nova_settings["hybrid_groq_model"],
     }})
 
 
@@ -500,8 +709,8 @@ def reset_conversation():
 # ─── List Available Models ─────────────────────────────────────────────────
 @app.route("/models")
 def list_models():
-    if nova_settings["provider"] == "groq":
-        # Return available Groq models
+    provider = nova_settings["provider"]
+    if provider == "groq":
         groq_models = [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
@@ -511,6 +720,21 @@ def list_models():
             "gemma2-9b-it",
         ]
         return jsonify({"models": groq_models, "provider": "groq"})
+    if provider == "ollama_cloud":
+        # Try to fetch model list from the cloud endpoint if it supports /api/tags
+        try:
+            tags_url = nova_settings["ollama_cloud_url"].replace("/api/generate", "/api/tags")
+            cloud_headers = {"Authorization": f"Bearer {nova_settings['ollama_api_key']}"}
+            r = requests.get(tags_url, headers=cloud_headers, timeout=8)
+            if r.status_code == 200:
+                models = [m["name"] for m in r.json().get("models", [])]
+                if models:
+                    return jsonify({"models": models, "provider": "ollama_cloud"})
+        except Exception:
+            pass
+        # Fallback to common open models if endpoint doesn't expose /api/tags
+        return jsonify({"models": ["mistral", "llama3", "gemma2", "phi3", "deepseek-r1"], "provider": "ollama_cloud"})
+    # Local Ollama
     try:
         r = requests.get("http://localhost:11434/api/tags", timeout=5)
         if r.status_code == 200:

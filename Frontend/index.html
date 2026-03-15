@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -15,6 +15,7 @@
     <link rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <link rel="stylesheet" href="/static/Style.css">
 </head>
 
@@ -695,13 +696,15 @@
             <div class="settings-body">
                 <div class="settings-group">
                     <label class="settings-label">AI Provider</label>
-                    <div class="settings-toggle-group">
-                        <button class="settings-toggle active" id="provider-ollama" onclick="setProvider('ollama')">🖥️
-                            Ollama (Local)</button>
-                        <button class="settings-toggle" id="provider-groq" onclick="setProvider('groq')">☁️ Groq
-                            (Cloud)</button>
+                    <div class="settings-toggle-group" style="flex-wrap:wrap;gap:6px;">
+                        <button class="settings-toggle active" id="provider-ollama" onclick="setProvider('ollama')">🖥️ Ollama (Local)</button>
+                        <button class="settings-toggle" id="provider-ollama-cloud" onclick="setProvider('ollama_cloud')">🌐 Ollama (Cloud)</button>
+                        <button class="settings-toggle" id="provider-groq" onclick="setProvider('groq')">☁️ Groq (Cloud)</button>
+                        <button class="settings-toggle" id="provider-hybrid" onclick="setProvider('hybrid')">🔀 Hybrid</button>
                     </div>
                 </div>
+
+                <!-- Groq-only settings -->
                 <div id="groq-settings" style="display:none">
                     <div class="settings-group">
                         <label class="settings-label">Groq API Key</label>
@@ -721,6 +724,78 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- Ollama Cloud-only settings -->
+                <div id="ollama-cloud-settings" style="display:none">
+                    <div class="settings-group">
+                        <label class="settings-label">Ollama API Key</label>
+                        <input type="password" id="settings-ollama-key" class="settings-input" placeholder="Your Ollama API key..."
+                            autocomplete="off">
+                        <p class="settings-hint">Paste your Ollama Cloud / hosted Ollama API key here.</p>
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Ollama Cloud Endpoint</label>
+                        <input type="text" id="settings-ollama-url" class="settings-input"
+                            placeholder="https://api.ollama.com/api/generate" autocomplete="off">
+                        <p class="settings-hint">The <code>/api/generate</code> URL of your hosted Ollama instance.</p>
+                    </div>
+                </div>
+
+                <!-- Hybrid settings — dual-column card -->
+                <div id="hybrid-settings" style="display:none">
+                    <div class="settings-group">
+                        <div class="hybrid-routing-badge">
+                            <span>⚡ Simple / chat → <strong>Ollama Cloud</strong> &nbsp;|&nbsp; 🧠 Code / analysis / long → <strong>Groq 70B</strong></span>
+                        </div>
+                    </div>
+                    <div class="hybrid-columns">
+                        <!-- Ollama Cloud column -->
+                        <div class="hybrid-col">
+                            <div class="hybrid-col-header">🌐 Ollama Cloud <span class="hybrid-col-tag">Fast · Cheap</span></div>
+                            <div class="settings-group">
+                                <label class="settings-label" style="font-size:0.75rem">API Key</label>
+                                <input type="password" id="settings-hybrid-ollama-key" class="settings-input"
+                                    placeholder="Ollama API key…" autocomplete="off">
+                            </div>
+                            <div class="settings-group">
+                                <label class="settings-label" style="font-size:0.75rem">Endpoint URL</label>
+                                <input type="text" id="settings-hybrid-ollama-url" class="settings-input"
+                                    placeholder="https://api.ollama.com/api/generate" autocomplete="off">
+                            </div>
+                            <div class="settings-group">
+                                <label class="settings-label" style="font-size:0.75rem">Model</label>
+                                <select id="settings-hybrid-ollama-model" class="settings-select">
+                                    <option value="mistral">Mistral</option>
+                                    <option value="llama3">Llama 3</option>
+                                    <option value="gemma2">Gemma 2</option>
+                                    <option value="phi3">Phi-3</option>
+                                    <option value="deepseek-r1">DeepSeek R1</option>
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Groq column -->
+                        <div class="hybrid-col">
+                            <div class="hybrid-col-header">☁️ Groq Cloud <span class="hybrid-col-tag">Accurate · Powerful</span></div>
+                            <div class="settings-group">
+                                <label class="settings-label" style="font-size:0.75rem">API Key</label>
+                                <input type="password" id="settings-hybrid-groq-key" class="settings-input"
+                                    placeholder="gsk_xxxx…" autocomplete="off">
+                                <p class="settings-hint" style="font-size:0.65rem">Free at <a href="https://console.groq.com" target="_blank" style="color:#00e5ff">console.groq.com</a></p>
+                            </div>
+                            <div class="settings-group">
+                                <label class="settings-label" style="font-size:0.75rem">Model</label>
+                                <select id="settings-hybrid-groq-model" class="settings-select">
+                                    <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Best)</option>
+                                    <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fast)</option>
+                                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                                    <option value="gemma2-9b-it">Gemma 2 9B</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ollama model selector – shown for Local and Cloud Ollama (not hybrid, which has its own) -->
                 <div id="ollama-settings">
                     <div class="settings-group">
                         <label class="settings-label">Ollama Model</label>

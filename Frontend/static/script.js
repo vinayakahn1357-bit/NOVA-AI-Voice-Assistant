@@ -1442,9 +1442,14 @@ let currentProvider = 'ollama';
 function setProvider(p) {
     currentProvider = p;
     document.getElementById('provider-ollama').classList.toggle('active', p === 'ollama');
+    document.getElementById('provider-ollama-cloud').classList.toggle('active', p === 'ollama_cloud');
     document.getElementById('provider-groq').classList.toggle('active', p === 'groq');
+    document.getElementById('provider-hybrid').classList.toggle('active', p === 'hybrid');
     document.getElementById('groq-settings').style.display = p === 'groq' ? 'block' : 'none';
-    document.getElementById('ollama-settings').style.display = p === 'ollama' ? 'block' : 'none';
+    document.getElementById('ollama-cloud-settings').style.display = p === 'ollama_cloud' ? 'block' : 'none';
+    document.getElementById('hybrid-settings').style.display = p === 'hybrid' ? 'block' : 'none';
+    // Ollama model dropdown only for local/cloud (hybrid has its own per-column selector)
+    document.getElementById('ollama-settings').style.display = (p === 'ollama' || p === 'ollama_cloud') ? 'block' : 'none';
 }
 
 function loadSettingsIntoUI() {
@@ -1463,10 +1468,27 @@ function loadSettingsIntoUI() {
 
     // Provider fields
     setProvider(s.provider || 'ollama');
+    // Groq
     const groqKeyEl = document.getElementById('settings-groq-key');
     if (groqKeyEl && s.groq_api_key) groqKeyEl.value = s.groq_api_key;
     const groqModelEl = document.getElementById('settings-groq-model');
     if (groqModelEl && s.groq_model) groqModelEl.value = s.groq_model;
+    // Ollama Cloud
+    const ollamaKeyEl = document.getElementById('settings-ollama-key');
+    if (ollamaKeyEl && s.ollama_api_key) ollamaKeyEl.value = s.ollama_api_key;
+    const ollamaUrlEl = document.getElementById('settings-ollama-url');
+    if (ollamaUrlEl) ollamaUrlEl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
+    // Hybrid
+    const hOllamaKey = document.getElementById('settings-hybrid-ollama-key');
+    if (hOllamaKey && s.ollama_api_key) hOllamaKey.value = s.ollama_api_key;
+    const hOllamaUrl = document.getElementById('settings-hybrid-ollama-url');
+    if (hOllamaUrl) hOllamaUrl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
+    const hOllamaModel = document.getElementById('settings-hybrid-ollama-model');
+    if (hOllamaModel && s.hybrid_ollama_model) hOllamaModel.value = s.hybrid_ollama_model;
+    const hGroqKey = document.getElementById('settings-hybrid-groq-key');
+    if (hGroqKey && s.groq_api_key) hGroqKey.value = s.groq_api_key;
+    const hGroqModel = document.getElementById('settings-hybrid-groq-model');
+    if (hGroqModel && s.hybrid_groq_model) hGroqModel.value = s.hybrid_groq_model;
 }
 
 async function saveSettings() {
@@ -1475,12 +1497,29 @@ async function saveSettings() {
     const num_predict = parseInt(document.getElementById('settings-tokens').value);
     const system_prompt = document.getElementById('settings-system-prompt').value.trim();
     const provider = currentProvider;
+
+    // Per-provider field reads
     const groq_api_key = document.getElementById('settings-groq-key')?.value || '';
     const groq_model = document.getElementById('settings-groq-model')?.value || 'llama-3.3-70b-versatile';
+    const ollama_api_key = document.getElementById('settings-ollama-key')?.value || '';
+    const ollama_cloud_url = document.getElementById('settings-ollama-url')?.value || 'https://api.ollama.com/api/generate';
+    // Hybrid reads — use shared api keys so they sync across modes
+    const h_ollama_key = document.getElementById('settings-hybrid-ollama-key')?.value || '';
+    const h_ollama_url = document.getElementById('settings-hybrid-ollama-url')?.value || 'https://api.ollama.com/api/generate';
+    const hybrid_ollama_model = document.getElementById('settings-hybrid-ollama-model')?.value || 'mistral';
+    const h_groq_key = document.getElementById('settings-hybrid-groq-key')?.value || '';
+    const hybrid_groq_model = document.getElementById('settings-hybrid-groq-model')?.value || 'llama-3.3-70b-versatile';
+
+    // Resolve the canonical keys — hybrid fields take priority if hybrid is selected
+    const final_ollama_key = provider === 'hybrid' ? (h_ollama_key || ollama_api_key) : (ollama_api_key || h_ollama_key);
+    const final_ollama_url = provider === 'hybrid' ? (h_ollama_url || ollama_cloud_url) : (ollama_cloud_url || h_ollama_url);
+    const final_groq_key = provider === 'hybrid' ? (h_groq_key || groq_api_key) : (groq_api_key || h_groq_key);
 
     const settings = {
         model, temperature, num_predict, system_prompt, stream_mode: isStreamMode,
-        provider, groq_api_key, groq_model
+        provider, groq_api_key: final_groq_key, groq_model,
+        ollama_api_key: final_ollama_key, ollama_cloud_url: final_ollama_url,
+        hybrid_ollama_model, hybrid_groq_model
     };
     localStorage.setItem('nova_settings', JSON.stringify(settings));
 
@@ -1490,16 +1529,24 @@ async function saveSettings() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model, temperature, num_predict, system_prompt,
-                provider, groq_api_key, groq_model
+                model, temperature, num_predict, system_prompt, provider,
+                groq_api_key: final_groq_key, groq_model,
+                ollama_api_key: final_ollama_key, ollama_cloud_url: final_ollama_url,
+                hybrid_ollama_model, hybrid_groq_model,
             }),
         });
     } catch { }
 
-    const activeModel = provider === 'groq' ? groq_model : model;
+    const activeModel = provider === 'groq' ? groq_model
+        : provider === 'hybrid' ? `${hybrid_ollama_model} / ${hybrid_groq_model}`
+        : model;
     updateModelBadge(activeModel);
     closeSettings();
-    showToast(`Settings saved! Provider: ${provider === 'groq' ? '☁️ Groq' : '🖥️ Ollama'} ✓`, 'success');
+    const providerLabel = provider === 'groq' ? '☁️ Groq'
+        : provider === 'hybrid' ? '🔀 Hybrid'
+        : provider === 'ollama_cloud' ? '🌐 Ollama Cloud'
+        : '🖥️ Ollama';
+    showToast(`Settings saved! Provider: ${providerLabel} ✓`, 'success');
 }
 
 async function resetSettings() {
@@ -1538,9 +1585,16 @@ async function applySavedSettings() {
                 provider: saved.provider || 'ollama',
                 groq_api_key: saved.groq_api_key || '',
                 groq_model: saved.groq_model || 'llama-3.3-70b-versatile',
+                ollama_api_key: saved.ollama_api_key || '',
+                ollama_cloud_url: saved.ollama_cloud_url || 'https://api.ollama.com/api/generate',
+                hybrid_ollama_model: saved.hybrid_ollama_model || 'mistral',
+                hybrid_groq_model: saved.hybrid_groq_model || 'llama-3.3-70b-versatile',
             }),
         });
-        const activeModel = currentProvider === 'groq' ? (saved.groq_model || 'llama-3.3-70b-versatile') : (saved.model || DEFAULT_SETTINGS.model);
+        let activeModel;
+        if (currentProvider === 'groq') activeModel = saved.groq_model || 'llama-3.3-70b-versatile';
+        else if (currentProvider === 'hybrid') activeModel = `${saved.hybrid_ollama_model || 'mistral'} / ${saved.hybrid_groq_model || 'llama-3.3-70b-versatile'}`;
+        else activeModel = saved.model || DEFAULT_SETTINGS.model;
         updateModelBadge(activeModel);
     } catch { }
 }
@@ -1871,9 +1925,198 @@ async function resetNovaMemory() {
             updateBrainPanel({ facts_count: 0, days_active: 0, total_conversations: 0, top_interests: [] });
             showToast("🧠 Nova's memory has been reset", 'info');
         }
-    } catch (e) {
-        showToast('Could not reset memory — is the server running?', 'warning');
+    } catch (err) {
+        showToast('Could not reach AI engine. Is the Flask server running?', 'error');
     }
+};
+
+// ─── 3D Home Scene (Three.js 3D Interactive Logo) ────────────────────────────────
+let homeScene, homeCamera, homeRenderer, homeParticles;
+let mouseX = 0, mouseY = 0;
+let homeAnimId;
+let logoGeoData = [];
+const windowHalfX = window.innerWidth / 2;
+const windowHalfY = window.innerHeight / 2;
+const logoParticleCount = 4000;
+
+function initHomeParticles() {
+    const canvas = document.getElementById('home-particles');
+    if (!canvas) return;
+
+    if (typeof THREE === 'undefined') {
+        console.warn('Three.js not loaded. Skipping 3D home logo.');
+        return;
+    }
+
+    if (homeScene) {
+        onWindowResizeHome();
+        animateHomeParticles();
+        return;
+    }
+
+    homeScene = new THREE.Scene();
+    // Use narrower FOV so the logo doesn't distort at edges
+    homeCamera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+    homeCamera.position.z = 180;
+
+    homeRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+    homeRenderer.setPixelRatio(window.devicePixelRatio);
+    homeRenderer.setSize(window.innerWidth, window.innerHeight);
+
+    const particleGeometry = new THREE.BufferGeometry();
+    const posArray = new Float32Array(logoParticleCount * 3);
+    const colorsArray = new Float32Array(logoParticleCount * 3);
+
+    const colorInside = new THREE.Color(0x00e5ff); // Cyan
+    const colorOutside = new THREE.Color(0xbc60d3); // Purple
+    const colorGold = new THREE.Color(0xe2c077); // Gold
+
+    logoGeoData = [];
+
+    // Procedurally generate a Tech/Neural Sphere Aura
+    for(let i = 0; i < logoParticleCount * 3; i+=3) {
+        // Sphere distribution
+        const radius = 50 + Math.random() * 60; // Inner empty space of 50 for the logo
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos((Math.random() * 2) - 1);
+        
+        let px = radius * Math.sin(phi) * Math.cos(theta);
+        let py = radius * Math.sin(phi) * Math.sin(theta);
+        let pz = radius * Math.cos(phi);
+
+        posArray[i] = px;
+        posArray[i+1] = py;
+        posArray[i+2] = pz;
+
+        // Save original positions and initial velocity for physics
+        logoGeoData.push({
+            ox: px, oy: py, oz: pz,
+            vx: 0, vy: 0, vz: 0,
+            angle: Math.random() * Math.PI * 2,
+            speed: 0.005 + Math.random() * 0.015
+        });
+        
+        // Color based on radius (inner cyan, outer purple)
+        const mixRatio = (radius - 50) / 60; 
+        let mixedColor = colorInside.clone().lerp(colorOutside, mixRatio);
+        
+        // Sprinkle gold
+        if (Math.random() > 0.95) mixedColor = colorGold;
+        
+        colorsArray[i] = mixedColor.r;
+        colorsArray[i+1] = mixedColor.g;
+        colorsArray[i+2] = mixedColor.b;
+    }
+
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+
+    const particleMaterial = new THREE.PointsMaterial({
+        size: 1.8,
+        vertexColors: true,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.9,
+        sizeAttenuation: true, // size differs based on distance
+        depthWrite: false
+    });
+
+    homeParticles = new THREE.Points(particleGeometry, particleMaterial);
+    
+    // Position it higher up where the old 2D logo used to be.
+    homeParticles.position.y = 35;
+    
+    homeScene.add(homeParticles);
+
+    // Track mouse for physics repel
+    document.addEventListener('mousemove', onDocumentMouseMoveHome);
+    window.addEventListener('resize', onWindowResizeHome);
+
+    animateHomeParticles();
+}
+
+function onDocumentMouseMoveHome(event) {
+    mouseX = (event.clientX - windowHalfX);
+    mouseY = (event.clientY - windowHalfY);
+}
+
+function onWindowResizeHome() {
+    if(!homeCamera || !homeRenderer) return;
+    homeCamera.aspect = window.innerWidth / window.innerHeight;
+    homeCamera.updateProjectionMatrix();
+    homeRenderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animateHomeParticles() {
+    const homeView = document.getElementById('view-home');
+    if (!homeView || !homeView.classList.contains('view-active')) {
+        cancelAnimationFrame(homeAnimId);
+        return;
+    }
+    
+    homeAnimId = requestAnimationFrame(animateHomeParticles);
+    
+    if (homeParticles) {
+        // Slow majestic float & rotate
+        const time = Date.now() * 0.001;
+        homeParticles.rotation.y = Math.sin(time * 0.2) * 0.5;
+        homeParticles.rotation.x = Math.sin(time * 0.3) * 0.2;
+        
+        // Map mouse screen coords to approximate 3D world coords at z=180
+        const cursorX = mouseX * 0.12; 
+        const cursorY = -mouseY * 0.12 - 35; 
+        
+        const positions = homeParticles.geometry.attributes.position.array;
+        
+        for(let i=0; i < logoParticleCount; i++) {
+            let data = logoGeoData[i];
+            
+            // Read current
+            let cx = positions[i*3];
+            let cy = positions[i*3+1];
+            let cz = positions[i*3+2];
+            
+            // Calculate distance to mouse cursor
+            let dx = cx - cursorX;
+            let dy = cy - cursorY;
+            
+            // Push away logic
+            let distSq = dx*dx + dy*dy;
+            let radiusSq = 1600; // Effect radius ~40 units
+            
+            if (distSq < radiusSq) {
+                let force = (radiusSq - distSq) / radiusSq;
+                data.vx += dx * force * 0.06;
+                data.vy += dy * force * 0.06;
+                data.vz += (Math.random() - 0.5) * force * 0.3; // Pop outwards
+            }
+            
+            // Subtly orbit the particles around their origin to make the sphere feel "alive"
+            data.angle += data.speed;
+            const orbitX = data.ox + Math.sin(data.angle) * 5;
+            const orbitY = data.oy + Math.cos(data.angle) * 5;
+            const orbitZ = data.oz + Math.sin(data.angle * 0.5) * 5;
+
+            // Spring back to orbital target
+            data.vx += (orbitX - cx) * 0.04;
+            data.vy += (orbitY - cy) * 0.04;
+            data.vz += (orbitZ - cz) * 0.04;
+            
+            // Friction/damping
+            data.vx *= 0.85;
+            data.vy *= 0.85;
+            data.vz *= 0.85;
+            
+            // Write new
+            positions[i*3]   += data.vx;
+            positions[i*3+1] += data.vy;
+            positions[i*3+2] += data.vz;
+        }
+        
+        homeParticles.geometry.attributes.position.needsUpdate = true;
+    }
+    
+    homeRenderer.render(homeScene, homeCamera);
 }
 
 // ─── CENTER PANEL — Particle canvas ──────────────────────────────────────────
