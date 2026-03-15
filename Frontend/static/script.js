@@ -700,6 +700,8 @@ async function sendStream(message, typingDiv, chatBox) {
                         bodyEl.querySelectorAll('pre code').forEach(block => {
                             if (typeof hljs !== 'undefined') hljs.highlightElement(block);
                         });
+                        // Update model badge if the server told us which sub-provider answered
+                        if (payload.model) updateModelBadge(payload.model);
                     }
                 } catch (parseErr) {
                     if (parseErr.message !== 'Unexpected token') throw parseErr;
@@ -1501,15 +1503,18 @@ function loadSettingsIntoUI() {
     if (ollamaKeyEl && s.ollama_api_key) ollamaKeyEl.value = s.ollama_api_key;
     const ollamaUrlEl = document.getElementById('settings-ollama-url');
     if (ollamaUrlEl) ollamaUrlEl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
-    // Hybrid
+    // Hybrid fields — if the specific hybrid fields are empty, fall back to
+    // the canonical shared keys already saved (so settings round-trip cleanly)
+    const savedOllamaKey = s.ollama_api_key || '';
+    const savedGroqKey   = s.groq_api_key   || '';
     const hOllamaKey = document.getElementById('settings-hybrid-ollama-key');
-    if (hOllamaKey && s.ollama_api_key) hOllamaKey.value = s.ollama_api_key;
+    if (hOllamaKey) hOllamaKey.value = s.ollama_api_key || '';
     const hOllamaUrl = document.getElementById('settings-hybrid-ollama-url');
     if (hOllamaUrl) hOllamaUrl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
     const hOllamaModel = document.getElementById('settings-hybrid-ollama-model');
     if (hOllamaModel && s.hybrid_ollama_model) hOllamaModel.value = s.hybrid_ollama_model;
     const hGroqKey = document.getElementById('settings-hybrid-groq-key');
-    if (hGroqKey && s.groq_api_key) hGroqKey.value = s.groq_api_key;
+    if (hGroqKey) hGroqKey.value = s.groq_api_key || '';
     const hGroqModel = document.getElementById('settings-hybrid-groq-model');
     if (hGroqModel && s.hybrid_groq_model) hGroqModel.value = s.hybrid_groq_model;
 }
@@ -1533,10 +1538,17 @@ async function saveSettings() {
     const h_groq_key = document.getElementById('settings-hybrid-groq-key')?.value || '';
     const hybrid_groq_model = document.getElementById('settings-hybrid-groq-model')?.value || 'llama-3.3-70b-versatile';
 
-    // Resolve the canonical keys — hybrid fields take priority if hybrid is selected
-    const final_ollama_key = provider === 'hybrid' ? (h_ollama_key || ollama_api_key) : (ollama_api_key || h_ollama_key);
-    const final_ollama_url = provider === 'hybrid' ? (h_ollama_url || ollama_cloud_url) : (ollama_cloud_url || h_ollama_url);
-    const final_groq_key = provider === 'hybrid' ? (h_groq_key || groq_api_key) : (groq_api_key || h_groq_key);
+    // Resolve canonical keys — prefer the active-provider's specific field,
+    // then fall back to the other field, so whichever one the user filled wins.
+    const final_groq_key   = (provider === 'hybrid'
+        ? (h_groq_key   || groq_api_key)
+        : (groq_api_key || h_groq_key))    || '';
+    const final_ollama_key = (provider === 'hybrid'
+        ? (h_ollama_key   || ollama_api_key)
+        : (ollama_api_key || h_ollama_key)) || '';
+    const final_ollama_url = (provider === 'hybrid'
+        ? (h_ollama_url   || ollama_cloud_url)
+        : (ollama_cloud_url || h_ollama_url)) || 'https://api.ollama.com/api/generate';
 
     const settings = {
         model, temperature, num_predict, system_prompt, stream_mode: isStreamMode,

@@ -139,20 +139,44 @@ nova_settings = {
 }
 
 # ─── Ollama Cloud Sanity Check ────────────────────────────────────────────────
-_FAKE_OLLAMA_DOMAINS = ("api.ollama.com",)
-
 def _ollama_cloud_configured() -> bool:
     """
-    Return True only when we have a non-empty Ollama API key AND the cloud URL
-    does NOT point to a known fake/non-existent public endpoint.
+    Return True when an Ollama API key is present (non-empty).
+    We intentionally do NOT block api.ollama.com — that is the real Ollama
+    Cloud endpoint and users may have valid keys for it.
     """
-    key = nova_settings.get("ollama_api_key", "")
-    url = nova_settings.get("ollama_cloud_url", "")
-    if not key:
-        return False
-    if any(domain in url for domain in _FAKE_OLLAMA_DOMAINS):
-        return False
-    return True
+    return bool(nova_settings.get("ollama_api_key", "").strip())
+
+
+def _groq_configured() -> bool:
+    """Return True when a Groq API key is present."""
+    return bool(nova_settings.get("groq_api_key", "").strip())
+
+
+def _hybrid_pick_sub(message: str) -> str:
+    """
+    Decide which sub-provider to use for a hybrid request.
+    Classification:
+      - 'groq'        → Groq Cloud for complex / long messages
+      - 'ollama_cloud' → Ollama Cloud for simple / short messages
+      - 'groq_only'   → Ollama Cloud not configured, always use Groq
+    Falls back gracefully when a provider is not available.
+    """
+    ollama_ok = _ollama_cloud_configured()
+    groq_ok   = _groq_configured()
+
+    if not ollama_ok and not groq_ok:
+        return "none"  # nothing configured
+
+    if not ollama_ok:
+        return "groq"  # only Groq available — route everything there
+
+    if not groq_ok:
+        return "ollama_cloud"  # only Ollama Cloud available
+
+    # Both configured — route by complexity
+    sub = _classify_query(message)
+    return sub  # 'groq' or 'ollama_cloud'
 
 # ─── Per-Session Conversation History (SQLite) ────────────────────────────────
 MAX_HISTORY = int(os.getenv("NOVA_MAX_HISTORY", "30"))
@@ -333,56 +357,100 @@ def chat():
         provider = nova_settings["provider"]
 
         # ─── Provider dispatch ────────────────────────────────────────────
-        # Guard: if hybrid/ollama_cloud is selected but the Ollama Cloud URL
-        # is the default placeholder (api.ollama.com) which is not a real API,
-        # automatically redirect to Groq or Ollama local.
-        if provider in ("hybrid", "ollama_cloud") and not _ollama_cloud_configured():
-            if nova_settings["groq_api_key"]:
-                print(f"[NOVA] {provider} → Ollama Cloud not configured; falling back to Groq")
+        # Guard: for ollama_cloud-only mode, fall back if not configured
+        if provider == "ollama_cloud" and not _ollama_cloud_configured():
+            if _groq_configured():
+                print("[NOVA] ollama_cloud → not configured; falling back to Groq")
                 provider = "groq"
             elif not NOVA_LIVE_MODE:
-                provider = "ollama"  # last resort: try local (only when NOT in live mode)
+                provider = "ollama"
             else:
-                return jsonify({"error": "No cloud AI provider configured. Set a Groq API key or a valid Ollama Cloud URL.", "code": "NO_CLOUD_PROVIDER"}), 503
+                return jsonify({"error": "No cloud AI provider configured.", "code": "NO_CLOUD_PROVIDER"}), 503
 
         if provider == "hybrid":
-            # Hybrid: route by complexity
-            sub = _classify_query(user_message)
+            # ── Hybrid: smart routing by complexity + availability ───────
+            sub = _hybrid_pick_sub(user_message)
             print(f"[NOVA] Hybrid → {sub} ({len(user_message.split())} words)")
+
+            if sub == "none":
+                if not NOVA_LIVE_MODE:
+                    # last resort: local Ollama
+                    sub = "_ollama_local"
+                else:
+                    return jsonify({"error": "No cloud AI provider configured. Set a Groq API key or a valid Ollama Cloud URL.", "code": "NO_CLOUD_PROVIDER"}), 503
+
             ai_response = ""
-            if sub == "groq" and nova_settings["groq_api_key"]:
+            actual_sub  = sub  # track which sub-provider ended up answering
+
+            if sub == "groq":
                 try:
                     r = _call_groq(history)
                     if r.status_code == 200:
                         ai_response = r.json()["choices"][0]["message"]["content"].strip()
                     else:
-                        print(f"[NOVA] Hybrid Groq failed ({r.status_code}), falling back to Ollama Cloud")
+                        print(f"[NOVA] Hybrid Groq failed ({r.status_code}), trying Ollama Cloud fallback")
                 except Exception as exc:
-                    print(f"[NOVA] Hybrid Groq exception: {exc}, falling back to Ollama Cloud")
-            # Fallback to Ollama Cloud (also used for simple queries)
-            if not ai_response:
-                r = _call_ollama_cloud(full_prompt)
-                if r.status_code != 200:
-                    return jsonify({"error": "Ollama Cloud error in hybrid mode", "code": "HYBRID_ERROR"}), 500
-                ai_response = r.json().get("response", "").strip()
+                    print(f"[NOVA] Hybrid Groq exception: {exc}, trying Ollama Cloud fallback")
+                # Fallback to Ollama Cloud if Groq failed
+                if not ai_response and _ollama_cloud_configured():
+                    r = _call_ollama_cloud(full_prompt)
+                    if r.status_code == 200:
+                        ai_response = r.json().get("response", "").strip()
+                        actual_sub  = "ollama_cloud"
 
-        elif provider == "groq" and nova_settings["groq_api_key"]:
+            elif sub == "ollama_cloud":
+                try:
+                    r = _call_ollama_cloud(full_prompt)
+                    if r.status_code == 200:
+                        ai_response = r.json().get("response", "").strip()
+                    else:
+                        print(f"[NOVA] Hybrid Ollama Cloud failed ({r.status_code}), trying Groq fallback")
+                except Exception as exc:
+                    print(f"[NOVA] Hybrid Ollama Cloud exception: {exc}, trying Groq fallback")
+                # Fallback to Groq if Ollama Cloud failed
+                if not ai_response and _groq_configured():
+                    r = _call_groq(history)
+                    if r.status_code == 200:
+                        ai_response = r.json()["choices"][0]["message"]["content"].strip()
+                        actual_sub  = "groq"
+
+            else:  # _ollama_local
+                payload = {
+                    "model": nova_settings["model"], "prompt": full_prompt, "stream": False,
+                    "options": {"temperature": nova_settings["temperature"], "top_p": nova_settings["top_p"],
+                                "num_predict": nova_settings["num_predict"], "num_ctx": 2048,
+                                "num_thread": CPU_CORES_PHYSICAL, "repeat_penalty": 1.1}
+                }
+                r = requests.post(OLLAMA_URL, json=payload, timeout=120)
+                if r.status_code == 200:
+                    ai_response = r.json().get("response", "").strip()
+
+            if actual_sub == "groq":
+                active_model = nova_settings["hybrid_groq_model"] or nova_settings["groq_model"]
+            elif actual_sub == "ollama_cloud":
+                active_model = nova_settings["hybrid_ollama_model"] or nova_settings["model"]
+            else:
+                active_model = nova_settings["model"]
+
+        elif provider == "groq" and _groq_configured():
             # Groq Cloud only
             r = _call_groq(history, model_override=nova_settings["groq_model"])
             if r.status_code != 200:
                 err_detail = r.json().get("error", {}).get("message", "Groq API error")
                 return jsonify({"error": err_detail, "code": "GROQ_ERROR"}), 500
             ai_response = r.json()["choices"][0]["message"]["content"].strip()
+            active_model = nova_settings["groq_model"]
 
-        elif provider == "ollama_cloud" and nova_settings["ollama_api_key"]:
+        elif provider == "ollama_cloud" and _ollama_cloud_configured():
             # Ollama Cloud only
             r = _call_ollama_cloud(full_prompt)
             if r.status_code != 200:
                 return jsonify({"error": f"Ollama Cloud error: {r.text[:200]}", "code": "OLLAMA_CLOUD_ERROR"}), 500
             ai_response = r.json().get("response", "").strip()
+            active_model = nova_settings["model"]
 
         else:
-            # Ollama Local API (default fallback)
+            # Ollama Local API (default / last resort)
             payload = {
                 "model": nova_settings["model"],
                 "prompt": full_prompt,
@@ -400,6 +468,7 @@ def chat():
             if response.status_code != 200:
                 return jsonify({"error": "AI engine error", "code": "OLLAMA_ERROR"}), 500
             ai_response = response.json().get("response", "").strip()
+            active_model = nova_settings["model"]
 
         if not ai_response:
             ai_response = "I'm not sure how to respond to that. Could you rephrase?"
@@ -409,7 +478,6 @@ def chat():
 
         # ── Learning: offload to background thread pool (non-blocking) ───────
         bg_pool.submit(memory.record_conversation)
-        active_model = nova_settings["groq_model"] if provider == "groq" else nova_settings["model"]
         bg_pool.submit(memory.extract_and_store, user_message, ai_response, active_model)
 
         return jsonify({
@@ -448,38 +516,49 @@ def chat_stream():
         full_prompt = build_prompt(history)
 
         provider = nova_settings["provider"]
-        # Guard: redirect hybrid/ollama_cloud to groq if Ollama Cloud is misconfigured
-        if provider in ("hybrid", "ollama_cloud") and not _ollama_cloud_configured():
-            if nova_settings["groq_api_key"]:
-                print(f"[NOVA] Stream {provider} → Ollama Cloud not configured; falling back to Groq")
+        # Guard: for ollama_cloud-only mode, fall back if not configured
+        if provider == "ollama_cloud" and not _ollama_cloud_configured():
+            if _groq_configured():
+                print("[NOVA] Stream ollama_cloud → not configured; falling back to Groq")
                 provider = "groq"
             elif not NOVA_LIVE_MODE:
-                provider = "ollama"  # last resort: try local (only when NOT in live mode)
+                provider = "ollama"
             else:
                 def _err_gen():
-                    yield f"data: {json.dumps({'error': 'No cloud AI provider configured. Set a Groq API key or a valid Ollama Cloud URL.'})}\n\n"
+                    yield f"data: {json.dumps({'error': 'No cloud AI provider configured.'})}\n\n"
                 return Response(stream_with_context(_err_gen()), mimetype="text/event-stream",
                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-        use_groq = provider == "groq" and nova_settings["groq_api_key"]
-        use_ollama_cloud = provider == "ollama_cloud"  # key check is in _call_ollama_cloud
-        use_hybrid = provider == "hybrid"              # key check is in _call_ollama_cloud
-        # Determine the label for the active model
+
+        use_groq        = provider == "groq" and _groq_configured()
+        use_ollama_cloud = provider == "ollama_cloud"
+        use_hybrid      = provider == "hybrid"
+
+        # active_model for non-hybrid paths (hybrid will be set per-sub-provider inside generate())
         if use_groq:
             active_model = nova_settings["groq_model"]
-        elif use_hybrid:
-            active_model = nova_settings["hybrid_ollama_model"] or nova_settings["model"] or "mistral"
         else:
             active_model = nova_settings["model"]
 
         def generate():
+            nonlocal active_model
             full_reply = []
             try:
                 if use_hybrid:
-                    # ─── Hybrid streaming: classify → route → stream ──────────────
-                    sub = _classify_query(user_message)
-                    print(f"[NOVA] Hybrid stream → {sub}")
-                    used_cloud = False
-                    if sub == "groq" and nova_settings["groq_api_key"]:
+                    # ─── Hybrid streaming: smart route + fallback ──────────────
+                    sub = _hybrid_pick_sub(user_message)
+                    print(f"[NOVA] Hybrid stream → {sub} ({len(user_message.split())} words)")
+
+                    if sub == "none":
+                        if not NOVA_LIVE_MODE:
+                            sub = "_ollama_local"
+                        else:
+                            yield f"data: {json.dumps({'error': 'No cloud AI provider configured.'})}\n\n"
+                            return
+
+                    used_provider = None  # track which sub actually streamed tokens
+
+                    # ── Try primary sub-provider ─────────────────────────────
+                    if sub == "groq":
                         try:
                             with _call_groq(history, stream=True) as r:
                                 for line in r.iter_lines():
@@ -500,33 +579,101 @@ def chat_stream():
                                             yield f"data: {json.dumps({'token': token})}\n\n"
                                     except (json.JSONDecodeError, IndexError, KeyError):
                                         continue
-                            used_cloud = True
+                            used_provider = "groq"
                         except Exception as exc:
-                            print(f"[NOVA] Hybrid stream Groq failed: {exc}, falling back to Ollama Cloud")
+                            print(f"[NOVA] Hybrid stream Groq failed: {exc}, trying Ollama Cloud")
                             full_reply = []
-                    if not used_cloud:
-                        # Simple query OR Groq fallback → always Ollama Cloud
-                        with _call_ollama_cloud(full_prompt, stream=True) as r:
-                            if r.status_code != 200:
-                                # Emit readable error so the bubble isn't blank
-                                err_body = r.text[:300]
-                                print(f"[NOVA] Hybrid Ollama Cloud error {r.status_code}: {err_body}")
-                                err_msg = f"Ollama Cloud error ({r.status_code}): {err_body}"
-                                yield f"data: {json.dumps({'token': err_msg})}\n\n"
-                                full_reply.append(err_msg)
-                            else:
+
+                    elif sub == "ollama_cloud":
+                        try:
+                            with _call_ollama_cloud(full_prompt, stream=True) as r:
+                                if r.status_code == 200:
+                                    for line in r.iter_lines():
+                                        if not line:
+                                            continue
+                                        try:
+                                            chunk = json.loads(line)
+                                            if chunk.get("error"):
+                                                print(f"[NOVA] Hybrid Ollama Cloud model error: {chunk['error']}")
+                                                break
+                                            token = chunk.get("response", "")
+                                            if token:
+                                                full_reply.append(token)
+                                                yield f"data: {json.dumps({'token': token})}\n\n"
+                                            if chunk.get("done"):
+                                                break
+                                        except json.JSONDecodeError:
+                                            continue
+                                    used_provider = "ollama_cloud"
+                                else:
+                                    print(f"[NOVA] Hybrid Ollama Cloud error {r.status_code}, trying Groq")
+                        except Exception as exc:
+                            print(f"[NOVA] Hybrid stream Ollama Cloud failed: {exc}, trying Groq")
+                            full_reply = []
+
+                    # ── Fallback: if primary failed, try the other provider ──
+                    if not used_provider:
+                        if sub == "groq" and _ollama_cloud_configured():
+                            # Groq failed → try Ollama Cloud
+                            try:
+                                with _call_ollama_cloud(full_prompt, stream=True) as r:
+                                    if r.status_code == 200:
+                                        for line in r.iter_lines():
+                                            if not line:
+                                                continue
+                                            try:
+                                                chunk = json.loads(line)
+                                                token = chunk.get("response", "")
+                                                if token:
+                                                    full_reply.append(token)
+                                                    yield f"data: {json.dumps({'token': token})}\n\n"
+                                                if chunk.get("done"):
+                                                    break
+                                            except json.JSONDecodeError:
+                                                continue
+                                        used_provider = "ollama_cloud"
+                            except Exception:
+                                pass
+                        elif sub == "ollama_cloud" and _groq_configured():
+                            # Ollama Cloud failed/absent → try Groq
+                            try:
+                                with _call_groq(history, stream=True) as r:
+                                    for line in r.iter_lines():
+                                        if not line:
+                                            continue
+                                        line_str = line.decode("utf-8", errors="ignore")
+                                        if not line_str.startswith("data: "):
+                                            continue
+                                        data_str = line_str[6:]
+                                        if data_str.strip() == "[DONE]":
+                                            break
+                                        try:
+                                            chunk = json.loads(data_str)
+                                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                            token = delta.get("content", "")
+                                            if token:
+                                                full_reply.append(token)
+                                                yield f"data: {json.dumps({'token': token})}\n\n"
+                                        except (json.JSONDecodeError, IndexError, KeyError):
+                                            continue
+                                    used_provider = "groq"
+                            except Exception:
+                                pass
+                        elif not NOVA_LIVE_MODE:
+                            # Last resort: Ollama local
+                            local_payload = {
+                                "model": nova_settings["model"], "prompt": full_prompt, "stream": True,
+                                "options": {"temperature": nova_settings["temperature"],
+                                            "top_p": nova_settings["top_p"],
+                                            "num_predict": nova_settings["num_predict"],
+                                            "num_ctx": 2048, "num_thread": CPU_CORES_PHYSICAL}
+                            }
+                            with requests.post(OLLAMA_URL, json=local_payload, stream=True, timeout=120) as r:
                                 for line in r.iter_lines():
                                     if not line:
                                         continue
                                     try:
                                         chunk = json.loads(line)
-                                        # Check if Ollama returned an error JSON
-                                        if chunk.get("error"):
-                                            err_msg = f"Ollama Cloud model error: {chunk['error']}"
-                                            print(f"[NOVA] {err_msg}")
-                                            yield f"data: {json.dumps({'token': err_msg})}\n\n"
-                                            full_reply.append(err_msg)
-                                            break
                                         token = chunk.get("response", "")
                                         if token:
                                             full_reply.append(token)
@@ -535,13 +682,22 @@ def chat_stream():
                                             break
                                     except json.JSONDecodeError:
                                         continue
+                            used_provider = "_ollama_local"
+
+                    # ── Set active_model based on which sub actually answered ─
+                    if used_provider == "groq":
+                        active_model = nova_settings["hybrid_groq_model"] or nova_settings["groq_model"]
+                    elif used_provider == "ollama_cloud":
+                        active_model = nova_settings["hybrid_ollama_model"] or nova_settings["model"]
+                    else:
+                        active_model = nova_settings["model"]
+
                     complete_reply = "".join(full_reply).strip()
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
                         bg_pool.submit(memory.record_conversation)
-                        bg_pool.submit(memory.extract_and_store,
-                                       user_message, complete_reply, active_model)
-                    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                        bg_pool.submit(memory.extract_and_store, user_message, complete_reply, active_model)
+                    yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'model': active_model})}\n\n"
 
                 elif use_groq:
                     # ─── Groq Cloud streaming (OpenAI SSE format) ────────
