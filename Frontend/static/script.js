@@ -1593,9 +1593,12 @@ async function applySavedSettings() {
         if (r.ok) {
             const backendSettings = await r.json();
             novaLiveMode = backendSettings.live_mode === true;
-            // In live mode, hide Ollama Local button immediately
             const ollamaLocalBtn = document.getElementById('provider-ollama');
-            if (ollamaLocalBtn) ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
+            if (ollamaLocalBtn) {
+                // Show Ollama Local ONLY if backend explicitly says live_mode=false
+                // Default (no backend / fetch fail) = hidden (cloud-safe)
+                ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
+            }
             // If localStorage has ollama (local) provider but we're in live mode, upgrade to hybrid
             if (novaLiveMode && saved.provider === 'ollama') {
                 saved.provider = 'hybrid';
@@ -1603,6 +1606,8 @@ async function applySavedSettings() {
                 console.info('[NOVA] Live mode: upgraded local ollama provider to hybrid');
             }
         }
+        // If fetch fails (static deploy / no backend), novaLiveMode stays false
+        // but button stays hidden because HTML has display:none by default
     } catch { }
 
     if (!saved.model && !saved.temperature && !saved.provider) return;

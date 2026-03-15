@@ -697,10 +697,10 @@
                 <div class="settings-group">
                     <label class="settings-label">AI Provider</label>
                     <div class="settings-toggle-group" style="flex-wrap:wrap;gap:6px;">
-                        <button class="settings-toggle active" id="provider-ollama" onclick="setProvider('ollama')">🖥️ Ollama (Local)</button>
+                        <button class="settings-toggle" id="provider-ollama" onclick="setProvider('ollama')" style="display:none">🖥️ Ollama (Local)</button>
                         <button class="settings-toggle" id="provider-ollama-cloud" onclick="setProvider('ollama_cloud')">🌐 Ollama (Cloud)</button>
                         <button class="settings-toggle" id="provider-groq" onclick="setProvider('groq')">☁️ Groq (Cloud)</button>
-                        <button class="settings-toggle" id="provider-hybrid" onclick="setProvider('hybrid')">🔀 Hybrid</button>
+                        <button class="settings-toggle active" id="provider-hybrid" onclick="setProvider('hybrid')">🔀 Hybrid</button>
                     </div>
                 </div>
 
