@@ -444,7 +444,12 @@ def auth_login():
 
     users = _load_users()
     user  = users.get(email)
-    if not user or not _verify_password(password, user["hash"], user["salt"]):
+    if not user:
+        return jsonify({"ok": False, "error": "Incorrect email or password."}), 401
+    # Google-only accounts can't use password login
+    if user.get("provider") == "google" and not user.get("hash"):
+        return jsonify({"ok": False, "error": "This account uses Google sign-in. Please click 'Continue with Google' instead."}), 401
+    if not _verify_password(password, user["hash"], user["salt"]):
         return jsonify({"ok": False, "error": "Incorrect email or password."}), 401
 
     session.permanent = True
@@ -488,7 +493,8 @@ def auth_google():
         return redirect("/login?error=google_not_configured")
 
     # Build the Google OAuth authorization URL
-    redirect_uri = request.host_url.rstrip("/") + "/auth/google/callback"
+    base = os.getenv("NOVA_BASE_URL", request.host_url.rstrip("/"))
+    redirect_uri = base + "/auth/google/callback"
     params = {
         "client_id":     google_client_id,
         "redirect_uri":  redirect_uri,
@@ -517,7 +523,8 @@ def auth_google_callback():
     if not google_client_id or not google_client_secret:
         return redirect("/login?error=google_not_configured")
 
-    redirect_uri = request.host_url.rstrip("/") + "/auth/google/callback"
+    base = os.getenv("NOVA_BASE_URL", request.host_url.rstrip("/"))
+    redirect_uri = base + "/auth/google/callback"
 
     # Exchange code for tokens
     token_res = requests.post("https://oauth2.googleapis.com/token", data={
