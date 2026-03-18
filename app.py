@@ -75,12 +75,30 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30  # 30 days
 
-# ─── User Database (JSON flat-file, created on first run) ─────────────────────
-_USERS_FILE = os.path.join(BASE_DIR, "nova_users.json")
+# On HTTPS deployments (Vercel, etc.), cookies MUST be Secure
+if os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes"):
+    app.config["SESSION_COOKIE_SECURE"] = True
+
+# ─── User Database (JSON flat-file) ───────────────────────────────────────────
+# Vercel serverless has a read-only project dir; use /tmp for writes.
+_is_vercel = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+_USERS_FILE_BUNDLED = os.path.join(BASE_DIR, "nova_users.json")   # ships with deploy
+_USERS_FILE = os.path.join("/tmp", "nova_users.json") if _is_vercel else _USERS_FILE_BUNDLED
+
 
 def _load_users() -> dict:
+    # Try writable location first
     if os.path.exists(_USERS_FILE):
         try:
+            with open(_USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # On Vercel cold-start, seed from the bundled file in the project dir
+    if _is_vercel and os.path.exists(_USERS_FILE_BUNDLED):
+        try:
+            import shutil
+            shutil.copy2(_USERS_FILE_BUNDLED, _USERS_FILE)
             with open(_USERS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
