@@ -45,6 +45,87 @@
         }
         #logout-btn { color: rgba(255, 100, 100, 0.6) !important; }
         #logout-btn:hover { color: #ff6b6b !important; background: rgba(255,77,77,0.08) !important; }
+
+        /* ─── Home Profile Avatar ─── */
+        .home-profile-wrap {
+            position: absolute;
+            top: 22px;
+            left: 24px;
+            z-index: 50;
+        }
+        .home-profile-avatar {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: linear-gradient(135deg, #00e5ff, #bc60d3);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 700; color: #080c14;
+            text-transform: uppercase; cursor: pointer;
+            border: 2px solid rgba(0, 229, 255, 0.3);
+            box-shadow: 0 0 18px rgba(0, 229, 255, 0.3);
+            transition: all 0.3s;
+            user-select: none;
+        }
+        .home-profile-avatar:hover {
+            box-shadow: 0 0 30px rgba(0, 229, 255, 0.5);
+            transform: scale(1.08);
+        }
+        .home-profile-dropdown {
+            display: none;
+            position: absolute;
+            top: 54px; left: 0;
+            min-width: 260px;
+            background: rgba(12, 16, 28, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+            padding: 20px;
+            animation: profDropIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+        .home-profile-dropdown.open {
+            display: block;
+        }
+        @keyframes profDropIn {
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .prof-header {
+            display: flex; align-items: center; gap: 14px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            margin-bottom: 14px;
+        }
+        .prof-header-avatar {
+            width: 42px; height: 42px; border-radius: 50%;
+            background: linear-gradient(135deg, #00e5ff, #bc60d3);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 700; color: #080c14;
+            text-transform: uppercase; flex-shrink: 0;
+        }
+        .prof-name {
+            font-size: 0.95rem; font-weight: 600; color: rgba(255,255,255,0.92);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .prof-email {
+            font-size: 0.78rem; color: rgba(255,255,255,0.4);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .prof-logout-btn {
+            width: 100%; padding: 11px 16px;
+            border: 1px solid rgba(255, 80, 80, 0.2);
+            border-radius: 10px;
+            background: rgba(255, 80, 80, 0.08);
+            color: #ff6b6b;
+            font-size: 0.88rem; font-weight: 500;
+            cursor: pointer; transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .prof-logout-btn:hover {
+            background: rgba(255, 80, 80, 0.16);
+            border-color: rgba(255, 80, 80, 0.4);
+        }
     </style>
 </head>
 
@@ -56,6 +137,21 @@
     <div id="view-home" class="app-view view-active">
         <canvas id="home-particles" class="home-particles-canvas"></canvas>
 
+        <!-- User Profile Avatar -->
+        <div class="home-profile-wrap" id="home-profile-wrap">
+            <div class="home-profile-avatar" id="home-profile-avatar" onclick="toggleProfileDropdown()">U</div>
+            <div class="home-profile-dropdown" id="home-profile-dropdown">
+                <div class="prof-header">
+                    <div class="prof-header-avatar" id="prof-header-avatar">U</div>
+                    <div>
+                        <div class="prof-name" id="prof-name">User</div>
+                        <div class="prof-email" id="prof-email">—</div>
+                    </div>
+                </div>
+                <button class="prof-logout-btn" onclick="novaLogout()">⏻ Sign Out</button>
+            </div>
+        </div>
+
         <div class="home-hero">
             <div class="home-logo-wrap">
                 <div class="home-logo-ring"></div>
@@ -65,71 +161,103 @@
                 <div class="home-title">NOVA</div>
                 <div class="home-subtitle">AI ASSISTANT</div>
             </div>
-            <div class="home-welcome-banner">
-                <div class="hwb-bracket hwb-left"><span class="hwb-line"></span><span class="hwb-dot"></span></div>
+            <div class="home-welcome-banner glass-panel">
                 <div class="hwb-text">
-                    <span id="home-greeting">WELCOME BACK.</span><br>
-                    <span id="home-system-status">SYSTEM READY.</span>
+                    <div class="hwb-greeting" id="home-greeting">Good Evening, Vinayaka.</div>
+                    <div class="hwb-sub" id="home-system-status">System Ready.</div>
+                    <div class="hwb-status-row">
+                        <span class="hwb-status-item"><span class="hwb-dot"></span> AI Status: <strong class="text-cyan">Online</strong></span>
+                        <span class="hwb-status-divider"></span>
+                        <span class="hwb-status-item"><span class="hwb-dot"></span> Voice Engine: <strong class="text-cyan">Active</strong></span>
+                        <span class="hwb-status-divider"></span>
+                        <span class="hwb-status-item"><span class="hwb-dot"></span> Memory Sync: <span style="opacity:0.7">Connected</span></span>
+                    </div>
                 </div>
-                <div class="hwb-bracket hwb-right"><span class="hwb-dot"></span><span class="hwb-line"></span></div>
             </div>
-            <button class="home-chat-cta" onclick="showView('chat')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                    <line x1="12" y1="19" x2="12" y2="23"></line>
-                    <line x1="8" y1="23" x2="16" y2="23"></line>
-                </svg>
-                Talk to NOVA
-            </button>
         </div>
 
         <div class="home-cards-row">
-            <div class="home-card" id="card-weather">
+            <!-- WEATHER CARD -->
+            <div class="home-card glass-panel" id="card-weather">
                 <div class="hcard-header">WEATHER</div>
                 <div class="hcard-body weather-body">
-                    <div class="weather-icon-wrap" id="weather-icon">—</div>
-                    <div class="weather-temp-wrap">
-                        <span class="weather-temp" id="weather-temp">--°</span>
-                        <span class="weather-feel" id="weather-feel">--</span>
+                    <div class="weather-row-main">
+                        <div class="weather-icon-wrap" id="weather-icon">⛅</div>
+                        <div class="weather-temp-wrap">
+                            <div class="weather-temp"><span id="weather-temp">29</span>°</div>
+                            <div class="weather-feel">Feels <span id="weather-feel">29</span>°C</div>
+                        </div>
                     </div>
                 </div>
-                <div class="weather-desc" id="weather-desc">Loading?</div>
+                <div class="weather-desc" id="weather-desc" style="margin-top: auto; opacity: 0.6; font-size: 0.85rem;">Partly Cloudy</div>
             </div>
-            <div class="home-card" id="card-schedule">
-                <div class="hcard-header">TODAY'S SCHEDULE <span class="hcard-badge" id="event-count">0 EVENTS</span>
-                </div>
+            
+            <!-- SCHEDULE CARD -->
+            <div class="home-card glass-panel" id="card-schedule">
+                <div class="hcard-header">TODAY'S SCHEDULE <span class="hcard-badge" id="event-count">0 EVENTS</span></div>
                 <div class="hcard-body">
-                    <div class="mini-cal" id="mini-cal"></div>
+                    <div class="mini-cal" id="mini-cal">
+                        <div class="cal-header">
+                            <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                        </div>
+                        <div class="cal-grid">
+                            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span>
+                            <span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span>
+                            <span class="curr-date">15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span>
+                            <span>22</span><span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span>
+                            <span>29</span><span>30</span><span>31</span><span></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="home-card" id="card-tasks">
-                <div class="hcard-header">PENDING TASKS <span class="hcard-badge" id="task-count">0 LEFT</span></div>
+
+            <!-- TASKS CARD -->
+            <div class="home-card glass-panel" id="card-tasks">
+                <div class="hcard-header">PENDING TASKS <span class="hcard-badge" id="task-count">3 LEFT</span></div>
                 <div class="hcard-body tasks-body">
                     <ul class="task-list" id="task-list">
-                        <li class="task-item"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span
-                                class="task-text">Review daily briefing</span></li>
-                        <li class="task-item"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span
-                                class="task-text">Check NOVA memory logs</span></li>
-                        <li class="task-item"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span
-                                class="task-text">Schedule weekly goals</span></li>
+                        <li class="task-item"><label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label><span class="task-text">Review daily briefing</span></li>
+                        <li class="task-item"><label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label><span class="task-text">Check NOVA memory logs</span></li>
+                        <li class="task-item"><label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label><span class="task-text">Schedule weekly goals</span></li>
                     </ul>
                     <div class="task-input-row">
-                        <input type="text" class="task-input" id="task-input-field" placeholder="Add task?"
-                            onkeydown="addTaskOnEnter(event)">
+                        <input type="text" class="task-input" id="task-input-field" placeholder="Add task?" onkeydown="addTaskOnEnter(event)">
                         <button class="task-add-btn" onclick="addTask()">+</button>
                     </div>
                 </div>
             </div>
-            <div class="home-card" id="card-news">
+
+            <!-- NEWS CARD -->
+            <div class="home-card glass-panel" id="card-news">
                 <div class="hcard-header">LATEST HEADLINES</div>
                 <div class="hcard-body news-body" id="news-list">
-                    <div class="news-loading">Fetching headlines?</div>
+                    <!-- Hardcoded mock UI to match the reference for aesthetic until JS populates -->
+                    <div class="news-item">
+                        <div class="news-icon" style="background: rgba(0, 229, 255, 0.1); color: #00e5ff;">🌍</div>
+                        <div class="news-content">
+                            <div class="news-title">World leaders convene for climate summit</div>
+                            <div class="news-source">Global News</div>
+                        </div>
+                    </div>
+                    <div class="news-item">
+                        <div class="news-icon" style="background: rgba(188, 96, 211, 0.1); color: #bc60d3;">🔬</div>
+                        <div class="news-content">
+                            <div class="news-title">New AI model breaks benchmark records</div>
+                            <div class="news-source">Tech Today</div>
+                        </div>
+                    </div>
+                    <div class="news-item">
+                        <div class="news-icon" style="background: rgba(226, 192, 119, 0.1); color: #e2c077;">🚀</div>
+                        <div class="news-content">
+                            <div class="news-title">Space agency announces lunar mission date</div>
+                            <div class="news-source">Space Wire</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <nav class="home-bottom-nav">
+        <nav class="home-bottom-nav glass-panel-nav">
             <button class="hbn-tab active" onclick="showView('home')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -139,6 +267,7 @@
             </button>
             <button class="hbn-tab hbn-mic" onclick="showView('voice')">
                 <div class="hbn-mic-ring"></div>
+                <div class="hbn-mic-glow"></div>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
                     stroke-linejoin="round">
                     <path d="M12 3v18" />
@@ -147,7 +276,7 @@
                     <path d="M4 11v2" />
                     <path d="M20 11v2" />
                 </svg>
-                <span>NOVA</span>
+                <span style="color: #00e5ff; font-weight: 600; text-shadow: 0 0 10px rgba(0,229,255,0.6);">NOVA</span>
             </button>
             <button class="hbn-tab" onclick="showView('chat')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -184,15 +313,6 @@
                 <div class="gc-brand">
                     <img src="/static/nova_logo.png" alt="N" class="gc-brand-logo">
                     <span class="gc-brand-name">N O V A</span>
-                </div>
-
-                <!-- User Profile Chip -->
-                <div class="gc-user-chip" id="gc-user-chip" style="display:none">
-                    <div class="gc-user-avatar" id="gc-user-avatar">?</div>
-                    <div class="gc-user-info">
-                        <div class="gc-user-name" id="gc-user-name">Loading…</div>
-                        <div class="gc-user-email" id="gc-user-email"></div>
-                    </div>
                 </div>
 
                 <!-- New Chat -->
@@ -261,13 +381,7 @@
                             <polyline points="9 22 9 12 15 12 15 22" />
                         </svg>
                     </button>
-                    <button class="gc-icon-btn" onclick="novaLogout()" title="Sign Out" id="logout-btn" style="display:none">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                            <polyline points="16 17 21 12 16 7"/>
-                            <line x1="21" y1="12" x2="9" y2="12"/>
-                        </svg>
-                    </button>
+
                 </div>
             </aside>
 

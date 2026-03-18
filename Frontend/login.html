@@ -7,7 +7,7 @@
     <meta name="description" content="Sign in to NOVA AI — your advanced neural voice assistant">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,7 +18,14 @@
         }
         body { 
             font-family:'Inter',sans-serif; 
-            background:var(--dark); 
+            background-color: #030712;
+            background-image: 
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 229, 255, 0.15) 0%, transparent 100%),
+                radial-gradient(ellipse 80% 50% at 50% 120%, rgba(188, 96, 211, 0.15) 0%, transparent 100%),
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+            background-attachment: fixed;
             color:var(--text); 
             min-height:100vh; 
             display:flex; 
@@ -30,54 +37,164 @@
         /* 3D Canvas Background */
         #home-particles {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 0;
-            pointer-events: none; /* let clicks pass through */
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0; pointer-events: none;
         }
-        /* We need a wrapper to track mouse for the 3D physics */
         .physics-layer {
-            position: absolute;
-            inset: 0;
-            z-index: 1;
+            position: absolute; inset: 0; z-index: 1;
         }
 
-        /* Auth Container */
-        .auth-container {
+        /* Split Layout Container */
+        .split-layout {
             position: relative;
             z-index: 10;
+            display: flex;
             width: 100%;
-            max-width: 440px;
-            padding: 40px;
-            background: rgba(12, 16, 26, 0.6);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 24px;
-            box-shadow: 0 30px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
-            animation: floatUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            opacity: 0;
-            transform: translateY(20px);
+            height: 100vh;
+            max-width: 1800px;
+            margin: 0 auto;
         }
 
-        @keyframes floatUp {
-            to { opacity: 1; transform: translateY(0); }
+        /* Left Side: Information Panel */
+        .info-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 40px 8%;
+            position: relative;
+        }
+
+        .info-logo {
+            display: inline-flex; align-items: center; gap: 14px;
+            text-decoration: none; margin-bottom: 60px;
+        }
+        .info-logo img {
+            width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(0, 229, 255, 0.3);
+            box-shadow: 0 0 25px rgba(0, 229, 255, 0.4);
+            animation: floatLogo 4s ease-in-out infinite;
+        }
+        @keyframes floatLogo {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); box-shadow: 0 8px 30px rgba(0, 229, 255, 0.6); }
+        }
+        .info-logo span {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.8rem; font-weight: 800; letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff, rgba(255,255,255,0.7));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        .info-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 100px;
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em;
+            color: var(--cyan); text-transform: uppercase;
+            margin-bottom: 24px; animation: slideIn 0.6s ease forwards;
+        }
+
+        .info-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2.5rem, 4vw, 4rem);
+            font-weight: 800; line-height: 1.1; margin-bottom: 24px;
+            animation: slideIn 0.7s ease 0.1s both;
+        }
+        .info-title .gradient-text {
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        .info-desc {
+            font-size: 1.1rem; color: var(--muted); max-width: 85%;
+            line-height: 1.7; margin-bottom: 40px;
+            animation: slideIn 0.7s ease 0.2s both;
+        }
+
+        .info-features {
+            display: grid; grid-template-columns: 1fr; gap: 24px;
+            animation: slideIn 0.7s ease 0.3s both;
+        }
+        .ifeat {
+            display: flex; align-items: flex-start; gap: 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 16px 20px; border-radius: 16px;
+            backdrop-filter: blur(10px);
+            max-width: 420px; transition: transform 0.3s, border-color 0.3s;
+        }
+        .ifeat:hover {
+            transform: translateX(10px); border-color: rgba(0, 229, 255, 0.2);
+        }
+        .ifeat-icon {
+            width: 44px; height: 44px; border-radius: 12px;
+            background: rgba(0, 229, 255, 0.1); border: 1px solid rgba(0, 229, 255, 0.2);
+            display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0;
+            color: var(--cyan);
+        }
+        .ifeat-icon.purple {
+            background: rgba(188, 96, 211, 0.1); border-color: rgba(188, 96, 211, 0.2); color: var(--purple);
+        }
+        .ifeat-title { font-weight: 600; color: #fff; font-size: 0.95rem; margin-bottom: 4px; font-family: 'Space Grotesk', sans-serif;}
+        .ifeat-sub { font-size: 0.8rem; color: var(--muted); line-height: 1.5;}
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Ambient Orbit Decoration */
+        .ambient-orbit {
+            position: absolute; right: 8%; top: 50%; transform: translateY(-50%);
+            width: 300px; height: 300px; pointer-events: none; z-index: -1;
+            opacity: 0.6;
+        }
+        .ao-ring-1 {
+            position: absolute; inset: 0; border: 1px solid rgba(0, 229, 255, 0.15); border-radius: 50%;
+            animation: spin 30s linear infinite; border-top-color: var(--cyan);
+        }
+        .ao-ring-2 {
+            position: absolute; inset: 30px; border: 1px dashed rgba(188, 96, 211, 0.2); border-radius: 50%;
+            animation: spin 20s linear infinite reverse;
+        }
+
+        /* Right Side: Auth Container */
+        .auth-side {
+            width: 520px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            background: rgba(10, 14, 22, 0.6);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: -20px 0 50px rgba(0,0,0,0.4);
+            z-index: 10;
+        }
+
+        .auth-container {
+            width: 100%; max-width: 400px;
+            animation: fadeInRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0; transform: translateX(20px);
+        }
+
+        @keyframes fadeInRight {
+            to { opacity: 1; transform: translateX(0); }
         }
 
         .back { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:.82rem; text-decoration:none; margin-bottom:28px; transition:color .2s; }
         .back:hover { color:var(--text); }
         
-        .logo { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:32px; text-decoration:none; }
-        .logo-orb { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,var(--cyan),var(--purple)); display:flex; align-items:center; justify-content:center; font-size:16px; box-shadow:0 0 20px rgba(0,229,255,.4), inset 0 0 10px rgba(255,255,255,0.4); }
-        .logo span { font-family:'Space Grotesk',sans-serif; font-size:1.6rem; font-weight:700; background:linear-gradient(135deg, #fff, rgba(255,255,255,0.7)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; letter-spacing:0.02em; }
-
         /* Tabs */
-        .tabs { display:flex; gap:6px; background:rgba(0,0,0,0.2); border-radius:14px; padding:6px; margin-bottom:28px; border: 1px solid rgba(255,255,255,0.03); }
+        .tabs { display:flex; gap:6px; background:rgba(0,0,0,0.3); border-radius:14px; padding:6px; margin-bottom:28px; border: 1px solid rgba(255,255,255,0.03); }
         .tab { flex:1; padding:12px; border-radius:10px; border:none; background:transparent; color:var(--muted); font-size:.9rem; font-weight:500; cursor:pointer; transition:all .3s; font-family:'Inter',sans-serif; }
         .tab:hover:not(.active) { color:var(--text); background:rgba(255,255,255,0.03); }
-        .tab.active { background:rgba(255,255,255,0.08); color:var(--text); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .tab.active { background:linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03)); color:var(--text); box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); }
 
         /* Form panels */
         .panel { display:none; animation: fadeIn 0.4s ease forwards; }
@@ -87,15 +204,15 @@
             to { opacity: 1; transform: translateY(0); }
         }
         
-        .panel-title { font-family:'Space Grotesk',sans-serif; font-size:1.5rem; font-weight:600; margin-bottom:6px; text-align: center; }
-        .panel-sub { color:var(--muted); font-size:.88rem; margin-bottom:24px; line-height:1.6; text-align: center; }
+        .panel-title { font-family:'Space Grotesk',sans-serif; font-size:1.6rem; font-weight:700; margin-bottom:8px; text-align: left;}
+        .panel-sub { color:var(--muted); font-size:.9rem; margin-bottom:28px; line-height:1.6; text-align: left;}
 
         /* Error banner */
         .error-banner { display:none; align-items:center; gap:10px; padding:12px 16px; border-radius:12px; background:rgba(255,77,109,.1); border:1px solid rgba(255,77,109,.3); color:#ff6b85; font-size:.85rem; margin-bottom:20px; text-align: left; }
         .error-banner.show { display:flex; }
 
         /* Google btn */
-        .btn-google { width:100%; padding:14px 20px; border-radius:12px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); color:var(--text); font-size:.95rem; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:12px; transition:all .2s; font-family:'Inter',sans-serif; text-decoration:none; margin-bottom:24px; position:relative; overflow:hidden; }
+        .btn-google { width:100%; padding:14px 20px; border-radius:12px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); color:var(--text); font-size:.95rem; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:12px; transition:all .2s; font-family:'Inter',sans-serif; text-decoration:none; margin-bottom:24px; position:relative; overflow:hidden; }
         .btn-google::before { content:''; position:absolute; inset:0; background:linear-gradient(rgba(255,255,255,0.05), transparent); opacity:0; transition:opacity 0.2s; pointer-events: none;}
         .btn-google:hover::before { opacity:1; }
         .btn-google:hover { border-color:rgba(255,255,255,.2); transform:translateY(-1px); box-shadow:0 8px 16px rgba(0,0,0,.2); }
@@ -106,12 +223,12 @@
         /* Divider */
         .div { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
         .div::before,.div::after { content:''; flex:1; height:1px; background:var(--border); }
-        .div span { color:var(--muted); font-size:.8rem; white-space:nowrap; }
+        .div span { color:var(--muted); font-size:.8rem; white-space:nowrap; text-transform: uppercase; letter-spacing: 1px;}
 
         /* Fields */
         .field { margin-bottom:18px; position:relative; text-align: left; }
         .field label { display:block; font-size:.82rem; font-weight:500; color:var(--muted); margin-bottom:8px; }
-        .field input { width:100%; padding:14px 44px 14px 16px; border-radius:12px; background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,0.08); color:var(--text); font-size:.95rem; font-family:'Inter',sans-serif; transition:all .2s; outline:none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+        .field input { width:100%; padding:14px 44px 14px 16px; border-radius:12px; background:rgba(0,0,0,.3); border:1px solid rgba(255,255,255,0.08); color:var(--text); font-size:.95rem; font-family:'Inter',sans-serif; transition:all .2s; outline:none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
         .field input:focus { border-color:rgba(0,229,255,.5); background:rgba(0,229,255,.05); box-shadow:0 0 0 4px rgba(0,229,255,.1), inset 0 2px 4px rgba(0,0,0,0.1); }
         .field input.error { border-color:rgba(255,77,109,.5); background:rgba(255,77,109,.05); }
         .field input::placeholder { color:rgba(255,255,255,.25); }
@@ -126,17 +243,17 @@
         .strength-label { font-size:.76rem; color:var(--muted); text-align: right; }
 
         /* Submit btn */
-        .btn-submit { width:100%; padding:15px 20px; border-radius:12px; background:linear-gradient(135deg,var(--cyan),var(--purple)); color:#fff; font-size:1rem; font-weight:600; border:none; cursor:pointer; transition:all .3s; font-family:'Inter',sans-serif; letter-spacing:.02em; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow: 0 4px 15px rgba(188,96,211,0.3); }
-        .btn-submit:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(0,229,255,.4), inset 0 1px 0 rgba(255,255,255,0.2); filter: brightness(1.1); }
+        .btn-submit { width:100%; padding:15px 20px; border-radius:12px; background:linear-gradient(135deg,var(--cyan),#0099cc); color:#080c14; font-size:1rem; font-weight:700; border:none; cursor:pointer; transition:all .3s; font-family:'Inter',sans-serif; letter-spacing:.02em; margin-top:12px; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow: 0 4px 20px rgba(0,229,255,0.25); }
+        .btn-submit:hover { transform:translateY(-2px); box-shadow:0 8px 30px rgba(0,229,255,.4); }
         .btn-submit:active { transform:translateY(0); box-shadow:0 4px 10px rgba(0,229,255,.3); }
         .btn-submit.loading { opacity:.7; pointer-events:none; cursor:wait; }
-        .spinner { width:18px; height:18px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; display:none; }
+        .spinner { width:18px; height:18px; border:2px solid rgba(8,12,20,.3); border-top-color:#080c14; border-radius:50%; animation:spin .7s linear infinite; display:none; }
         .btn-submit.loading .spinner { display:inline-block; }
         @keyframes spin { to{transform:rotate(360deg)} }
 
-        .switch-link { margin-top:20px; text-align:center; font-size:.85rem; color:var(--muted); }
+        .switch-link { margin-top:24px; text-align:center; font-size:.85rem; color:var(--muted); }
         .switch-link a { color:var(--cyan); text-decoration:none; font-weight:500; transition: color 0.2s; }
-        .switch-link a:hover { color:#fff; }
+        .switch-link a:hover { color:#fff; text-shadow: 0 0 8px rgba(0,229,255,0.5); }
 
         /* Google not configured warning */
         .google-warn { display:none; font-size:.8rem; color:var(--gold); text-align:center; margin-top:-12px; margin-bottom:20px; background: rgba(226, 192, 119, 0.1); border: 1px solid rgba(226, 192, 119, 0.3); padding: 10px; border-radius: 8px;}
@@ -150,9 +267,14 @@
         #toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(60px); background:rgba(20,25,35,.96); border:1px solid rgba(255,255,255,0.1); color:var(--text); padding:14px 28px; border-radius:14px; font-size:.9rem; font-weight: 500; backdrop-filter:blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition:transform .4s cubic-bezier(.34,1.56,.64,1), opacity .3s; opacity:0; z-index:999; white-space:nowrap; pointer-events:none; }
         #toast.show { transform:translateX(-50%) translateY(0); opacity:1; }
 
-        @media(max-width:760px) { 
-            .auth-container { border-radius: 0; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; background: rgba(8, 12, 20, 0.85); border: none; padding: 30px 20px; box-shadow: none; max-width: 100%;}
-            .back { position: absolute; top: 20px; left: 20px; margin-bottom: 0; }
+        @media(max-width:1024px) { 
+            .split-layout { flex-direction: column; height: auto; min-height: 100vh; }
+            .info-panel { padding: 60px 5%; align-items: center; text-align: center; flex: none; min-height: 50vh; }
+            .info-desc { max-width: 100%; }
+            .info-features { display: flex; flex-wrap: wrap; justify-content: center; }
+            .ambient-orbit { display: none; }
+            .auth-side { width: 100%; border-left: none; padding: 60px 20px; background: transparent; box-shadow: none; border-top: 1px solid rgba(255,255,255,0.05); }
+            .auth-container { max-width: 440px; margin: 0 auto; background: rgba(12, 16, 26, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; padding: 30px; }
         }
     </style>
 </head>
@@ -163,91 +285,134 @@
 <!-- Invisible overlay to capture mouse events across the whole screen for the 3D particles -->
 <div class="physics-layer" id="physics-layer"></div>
 
-<div class="auth-container">
-    <a href="/" class="back">← Back</a>
+<div class="split-layout">
     
-    <a href="/" class="logo">
-        <div class="logo-orb">✦</div>
-        <span>NOVA AI</span>
-    </a>
-
-    <div class="tabs">
-        <button class="tab active" id="tab-signin" onclick="switchTab('signin')">Sign In</button>
-        <button class="tab" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
-    </div>
-
-    <!-- Error banner (shared) -->
-    <div class="error-banner" id="error-banner">⚠️ <span id="error-text">Something went wrong.</span></div>
-
-    <!-- Google not configured notice -->
-    <div class="google-warn" id="google-warn">⚠️ Google login not configured — add GOOGLE_CLIENT_ID to .env</div>
-
-    <!-- ── SIGN IN ── -->
-    <div class="panel active" id="panel-signin">
-        <div class="panel-title">Welcome back</div>
-        <p class="panel-sub">Sign in to continue your conversation with NOVA.</p>
-
-        <button class="btn-google" id="btn-google-signin" onclick="handleGoogle()">
-            <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-            Continue with Google
-        </button>
-
-        <div class="div"><span>or sign in with email</span></div>
-
-        <div class="field">
-            <label>Email address</label>
-            <input type="email" id="si-email" placeholder="you@example.com" autocomplete="email">
+    <!-- LEFT SIDE: NOVA INFO -->
+    <div class="info-panel">
+        <div class="ambient-orbit">
+            <div class="ao-ring-1"></div>
+            <div class="ao-ring-2"></div>
         </div>
-        <div class="field">
-            <label>Password</label>
-            <input type="password" id="si-pass" placeholder="••••••••" autocomplete="current-password">
-            <button class="eye-btn" type="button" onclick="toggleEye('si-pass', this)" tabindex="-1">👁</button>
-        </div>
-        <button class="btn-submit" id="si-btn" onclick="handleSignIn()">
-            <span class="spinner"></span>
-            <span class="si-label">Sign In to NOVA →</span>
-        </button>
-        <div class="switch-link">Don't have an account? <a href="#" onclick="switchTab('signup');return false;">Sign up free</a></div>
-    </div>
-
-    <!-- ── SIGN UP ── -->
-    <div class="panel" id="panel-signup">
-        <div class="panel-title">Create account</div>
-        <p class="panel-sub">Join NOVA — your intelligent voice companion.</p>
-
-        <button class="btn-google" id="btn-google-signup" onclick="handleGoogle()">
-            <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-            Sign up with Google
-        </button>
-
-        <div class="div"><span>or create with email</span></div>
-
-        <div class="field">
-            <label>Full name</label>
-            <input type="text" id="su-name" placeholder="Your name" autocomplete="name">
-        </div>
-        <div class="field">
-            <label>Email address</label>
-            <input type="email" id="su-email" placeholder="you@example.com" autocomplete="email">
-        </div>
-        <div class="field">
-            <label>Password</label>
-            <input type="password" id="su-pass" placeholder="Create a strong password" autocomplete="new-password" oninput="checkStrength(this.value)">
-            <button class="eye-btn" type="button" onclick="toggleEye('su-pass', this)" tabindex="-1">👁</button>
-            <div class="strength-wrap" id="strength-wrap">
-                <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
-                <div class="strength-label" id="strength-label">Too short</div>
+        
+        <a href="/" class="info-logo">
+            <img src="/static/nova_logo.png" alt="NOVA">
+            <span>NOVA AI</span>
+        </a>
+        
+        <div class="info-badge">✦ Neural Interface Active</div>
+        
+        <h1 class="info-title">
+            Enter the<br>
+            <span class="gradient-text">Future of Intelligence</span>
+        </h1>
+        
+        <p class="info-desc">
+            Sign in to access your personal neural voice assistant. NOVA routes your queries 
+            through advanced hybrid-cloud models for maximum speed, accuracy, and memory retention.
+        </p>
+        
+        <div class="info-features">
+            <div class="ifeat">
+                <div class="ifeat-icon">⚡</div>
+                <div>
+                    <div class="ifeat-title">Lightning Fast Response</div>
+                    <div class="ifeat-sub">Powered by Groq LPU technology.</div>
+                </div>
+            </div>
+            <div class="ifeat">
+                <div class="ifeat-icon purple">🧠</div>
+                <div>
+                    <div class="ifeat-title">Continuous Memory</div>
+                    <div class="ifeat-sub">NOVA learns and remembers your preferences.</div>
+                </div>
             </div>
         </div>
-        <button class="btn-submit" id="su-btn" onclick="handleSignUp()">
-            <span class="spinner"></span>
-            <span class="su-label">Create Account →</span>
-        </button>
-        <div class="switch-link">Already have an account? <a href="#" onclick="switchTab('signin');return false;">Sign in</a></div>
     </div>
+    
+    <!-- RIGHT SIDE: AUTH -->
+    <div class="auth-side">
+        <div class="auth-container">
+            <a href="/" class="back">← Back home</a>
+            
+            <div class="tabs">
+                <button class="tab active" id="tab-signin" onclick="switchTab('signin')">Sign In</button>
+                <button class="tab" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
+            </div>
 
-    <div class="terms">
-        By continuing you agree to our <a href="#">Terms</a> and <a href="#">Privacy Policy</a>.
+            <!-- Error banner (shared) -->
+            <div class="error-banner" id="error-banner">⚠️ <span id="error-text">Something went wrong.</span></div>
+
+            <!-- Google not configured notice -->
+            <div class="google-warn" id="google-warn">⚠️ Google login not configured — add GOOGLE_CLIENT_ID to .env</div>
+
+            <!-- ── SIGN IN ── -->
+            <div class="panel active" id="panel-signin">
+                <div class="panel-title">Welcome back</div>
+                <p class="panel-sub">Sign in to continue your conversation with NOVA.</p>
+
+                <button class="btn-google" id="btn-google-signin" onclick="handleGoogle()">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </button>
+
+                <div class="div"><span>or sign in with email</span></div>
+
+                <div class="field">
+                    <label>Email address</label>
+                    <input type="email" id="si-email" placeholder="you@example.com" autocomplete="email">
+                </div>
+                <div class="field">
+                    <label>Password</label>
+                    <input type="password" id="si-pass" placeholder="••••••••" autocomplete="current-password">
+                    <button class="eye-btn" type="button" onclick="toggleEye('si-pass', this)" tabindex="-1">👁</button>
+                </div>
+                <button class="btn-submit" id="si-btn" onclick="handleSignIn()">
+                    <span class="spinner"></span>
+                    <span class="si-label">Sign In to NOVA →</span>
+                </button>
+                <div class="switch-link">Don't have an account? <a href="#" onclick="switchTab('signup');return false;">Sign up free</a></div>
+            </div>
+
+            <!-- ── SIGN UP ── -->
+            <div class="panel" id="panel-signup">
+                <div class="panel-title">Create account</div>
+                <p class="panel-sub">Join NOVA — your intelligent voice companion.</p>
+
+                <button class="btn-google" id="btn-google-signup" onclick="handleGoogle()">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign up with Google
+                </button>
+
+                <div class="div"><span>or create with email</span></div>
+
+                <div class="field">
+                    <label>Full name</label>
+                    <input type="text" id="su-name" placeholder="Your name" autocomplete="name">
+                </div>
+                <div class="field">
+                    <label>Email address</label>
+                    <input type="email" id="su-email" placeholder="you@example.com" autocomplete="email">
+                </div>
+                <div class="field">
+                    <label>Password</label>
+                    <input type="password" id="su-pass" placeholder="Create a strong password" autocomplete="new-password" oninput="checkStrength(this.value)">
+                    <button class="eye-btn" type="button" onclick="toggleEye('su-pass', this)" tabindex="-1">👁</button>
+                    <div class="strength-wrap" id="strength-wrap">
+                        <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+                        <div class="strength-label" id="strength-label">Too short</div>
+                    </div>
+                </div>
+                <button class="btn-submit" id="su-btn" onclick="handleSignUp()">
+                    <span class="spinner"></span>
+                    <span class="su-label">Create Account →</span>
+                </button>
+                <div class="switch-link">Already have an account? <a href="#" onclick="switchTab('signin');return false;">Sign in</a></div>
+            </div>
+
+            <div class="terms">
+                By continuing you agree to our <a href="#">Terms</a> and <a href="#">Privacy Policy</a>.
+            </div>
+        </div>
     </div>
 </div>
 
@@ -255,7 +420,6 @@
 
 <!-- ── Original Auth Handlers ── -->
 <script>
-// ── Helpers ────────────────────────────────────────────────────────────────────
 function showError(msg) {
     const b = document.getElementById('error-banner');
     document.getElementById('error-text').textContent = msg;
@@ -276,7 +440,6 @@ function setLoading(btnId, loading) {
     btn.classList.toggle('loading', loading);
 }
 
-// ── Tab switch ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
     clearError();
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -285,7 +448,6 @@ function switchTab(tab) {
     document.getElementById('panel-' + tab).classList.add('active');
 }
 
-// ── Show / hide password ───────────────────────────────────────────────────────
 function toggleEye(inputId, btn) {
     const inp = document.getElementById(inputId);
     const isText = inp.type === 'text';
@@ -293,7 +455,6 @@ function toggleEye(inputId, btn) {
     btn.textContent = isText ? '👁' : '🙈';
 }
 
-// ── Password strength ──────────────────────────────────────────────────────────
 function checkStrength(val) {
     const wrap = document.getElementById('strength-wrap');
     const fill = document.getElementById('strength-fill');
@@ -321,13 +482,11 @@ function checkStrength(val) {
     label.style.color = lvl.bg;
 }
 
-// ── Google OAuth ──────────────────────────────────────────────────────────────
 async function handleGoogle() {
     document.querySelectorAll('.btn-google').forEach(b => b.classList.add('loading'));
     setTimeout(() => { window.location.href = '/auth/google'; }, 300);
 }
 
-// ── Sign In ───────────────────────────────────────────────────────────────────
 async function handleSignIn() {
     clearError();
     const email = document.getElementById('si-email').value.trim();
@@ -356,7 +515,6 @@ async function handleSignIn() {
     }
 }
 
-// ── Sign Up ────────────────────────────────────────────────────────────────────
 async function handleSignUp() {
     clearError();
     const name  = document.getElementById('su-name').value.trim();
@@ -387,7 +545,6 @@ async function handleSignUp() {
     }
 }
 
-// ── Enter key submits ──────────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const active = document.querySelector('.panel.active')?.id;
@@ -395,7 +552,6 @@ document.addEventListener('keydown', (e) => {
     else if (active === 'panel-signup') handleSignUp();
 });
 
-// ── Handle URL error params (from Google OAuth redirects) ─────────────────────
 const err = new URLSearchParams(location.search).get('error');
 if (err === 'google_not_configured') {
     document.getElementById('google-warn').classList.add('show');
@@ -408,109 +564,91 @@ if (err === 'google_not_configured') {
     showError(msgs[err] || 'Authentication error: ' + err);
 }
 
-// ── Auto-focus first field ─────────────────────────────────────────────────────
 window.addEventListener('load', () => {
     setTimeout(() => document.getElementById('si-email')?.focus(), 300);
 });
 </script>
 
-<!-- ── 3D Particles Script (Copied from script.js) ── -->
+<!-- ── 3D Masterpiece Neural Network ── -->
 <script>
-let homeScene, homeCamera, homeRenderer, homeParticles;
+let homeScene, homeCamera, homeRenderer, neuralPoints, neuralLines;
 let mouseX = 0, mouseY = 0;
 let homeAnimId;
-let logoGeoData = [];
 const windowHalfX = window.innerWidth / 2;
 const windowHalfY = window.innerHeight / 2;
-const logoParticleCount = 4000;
+let time = 0;
+        
+const particleCount = 200; // Optimal for lines
+const maxDistance = 150;
+let particlePositions = [];
+let particleVelocities = [];
 
 function initHomeParticles() {
     const canvas = document.getElementById('home-particles');
     if (!canvas) return;
-
-    if (typeof THREE === 'undefined') {
-        console.warn('Three.js not loaded. Skipping 3D background.');
-        return;
-    }
+    if (typeof THREE === 'undefined') return;
 
     homeScene = new THREE.Scene();
-    homeCamera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
-    homeCamera.position.z = 180;
+            
+    homeCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 2000);
+    homeCamera.position.z = 400;
 
     homeRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
     homeRenderer.setPixelRatio(window.devicePixelRatio);
     homeRenderer.setSize(window.innerWidth, window.innerHeight);
 
-    const particleGeometry = new THREE.BufferGeometry();
-    const posArray = new Float32Array(logoParticleCount * 3);
-    const colorsArray = new Float32Array(logoParticleCount * 3);
+    // Particles
+    const pGeometry = new THREE.BufferGeometry();
+    const pPositions = new Float32Array(particleCount * 3);
+    const pColors = new Float32Array(particleCount * 3);
 
-    const colorInside = new THREE.Color(0x00e5ff); // Cyan
-    const colorOutside = new THREE.Color(0xbc60d3); // Purple
-    const colorGold = new THREE.Color(0xe2c077); // Gold
+    const colorCyan = new THREE.Color(0x00e5ff);
+    const colorPurple = new THREE.Color(0xbc60d3);
 
-    logoGeoData = [];
+    for (let i = 0; i < particleCount; i++) {
+        const x = (Math.random() - 0.5) * 1400;
+        const y = (Math.random() - 0.5) * 1000;
+        const z = (Math.random() - 0.5) * 800;
 
-    // Procedurally generate a Tech/Neural Sphere Aura
-    for(let i = 0; i < logoParticleCount * 3; i+=3) {
-        // Sphere distribution
-        const radius = 50 + Math.random() * 60; // Inner empty space of 50
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos((Math.random() * 2) - 1);
-        
-        let px = radius * Math.sin(phi) * Math.cos(theta);
-        let py = radius * Math.sin(phi) * Math.sin(theta);
-        let pz = radius * Math.cos(phi);
+        pPositions[i * 3] = x;
+        pPositions[i * 3 + 1] = y;
+        pPositions[i * 3 + 2] = z;
 
-        posArray[i] = px;
-        posArray[i+1] = py;
-        posArray[i+2] = pz;
+        particlePositions.push(new THREE.Vector3(x, y, z));
+        particleVelocities.push(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6));
 
-        // Save original positions and initial velocity for physics
-        logoGeoData.push({
-            ox: px, oy: py, oz: pz,
-            vx: 0, vy: 0, vz: 0,
-            angle: Math.random() * Math.PI * 2,
-            speed: 0.005 + Math.random() * 0.015
-        });
-        
-        // Color based on radius (inner cyan, outer purple)
-        const mixRatio = (radius - 50) / 60; 
-        let mixedColor = colorInside.clone().lerp(colorOutside, mixRatio);
-        
-        // Sprinkle gold
-        if (Math.random() > 0.95) mixedColor = colorGold;
-        
-        colorsArray[i] = mixedColor.r;
-        colorsArray[i+1] = mixedColor.g;
-        colorsArray[i+2] = mixedColor.b;
+        let isCyan = Math.random() > 0.4;
+        pColors[i * 3] = isCyan ? colorCyan.r : colorPurple.r;
+        pColors[i * 3 + 1] = isCyan ? colorCyan.g : colorPurple.g;
+        pColors[i * 3 + 2] = isCyan ? colorCyan.b : colorPurple.b;
     }
 
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+    pGeometry.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+    pGeometry.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
 
-    const particleMaterial = new THREE.PointsMaterial({
-        size: 1.8,
-        vertexColors: true,
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        opacity: 0.9,
-        sizeAttenuation: true, // size differs based on distance
-        depthWrite: false
+    const pMaterial = new THREE.PointsMaterial({
+        size: 3, vertexColors: true, transparent: true, opacity: 0.9,
+        sizeAttenuation: true, blending: THREE.AdditiveBlending
     });
+    neuralPoints = new THREE.Points(pGeometry, pMaterial);
+    homeScene.add(neuralPoints);
 
-    homeParticles = new THREE.Points(particleGeometry, particleMaterial);
-    
-    // Position it appropriately (centered behind the auth screen)
-    homeParticles.position.y = 0;
-    // On the login page, let's offset it slightly to the left behind the auth box, or just center it. 
-    if (window.innerWidth > 760) {
-        homeParticles.position.x = -35;
-    }
-    
-    homeScene.add(homeParticles);
+    // Lines
+    const lGeometry = new THREE.BufferGeometry();
+    const maxLines = particleCount * particleCount;
+    const lPositions = new Float32Array(maxLines * 3);
+    const lColors = new Float32Array(maxLines * 3);
+            
+    lGeometry.setAttribute('position', new THREE.BufferAttribute(lPositions, 3).setUsage(THREE.DynamicDrawUsage));
+    lGeometry.setAttribute('color', new THREE.BufferAttribute(lColors, 3).setUsage(THREE.DynamicDrawUsage));
 
-    // Track mouse for physics repel
+    const lMaterial = new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.35,
+        blending: THREE.AdditiveBlending
+    });
+    neuralLines = new THREE.LineSegments(lGeometry, lMaterial);
+    homeScene.add(neuralLines);
+
     const layer = document.getElementById('physics-layer');
     if (layer) layer.addEventListener('mousemove', onDocumentMouseMoveHome);
     window.addEventListener('resize', onWindowResizeHome);
@@ -528,80 +666,86 @@ function onWindowResizeHome() {
     homeCamera.aspect = window.innerWidth / window.innerHeight;
     homeCamera.updateProjectionMatrix();
     homeRenderer.setSize(window.innerWidth, window.innerHeight);
-    if (window.innerWidth > 760 && homeParticles) {
-        homeParticles.position.x = -35;
-    } else if (homeParticles) {
-        homeParticles.position.x = 0;
-    }
 }
 
 function animateHomeParticles() {
     homeAnimId = requestAnimationFrame(animateHomeParticles);
-    
-    if (homeParticles) {
-        // Slow majestic float & rotate
-        const time = Date.now() * 0.001;
-        homeParticles.rotation.y = Math.sin(time * 0.2) * 0.5;
-        homeParticles.rotation.x = Math.sin(time * 0.3) * 0.2;
-        
-        // Map mouse screen coords to approximate 3D world coords at z=180
-        const cursorX = mouseX * 0.12; 
-        const cursorY = -mouseY * 0.12; 
-        
-        const positions = homeParticles.geometry.attributes.position.array;
-        
-        for(let i=0; i < logoParticleCount; i++) {
-            let data = logoGeoData[i];
+    time += 0.01;
             
-            // Read current
-            let cx = positions[i*3];
-            let cy = positions[i*3+1];
-            let cz = positions[i*3+2];
-            
-            // Calculate distance to mouse cursor
-            let dx = cx - cursorX;
-            let dy = cy - cursorY;
-            
-            // Push away logic
-            let distSq = dx*dx + dy*dy;
-            let radiusSq = 1600; // Effect radius ~40 units
-            
-            if (distSq < radiusSq) {
-                let force = (radiusSq - distSq) / radiusSq;
-                data.vx += dx * force * 0.06;
-                data.vy += dy * force * 0.06;
-                data.vz += (Math.random() - 0.5) * force * 0.3; // Pop outwards
-            }
-            
-            // Subtly orbit the particles around their origin
-            data.angle += data.speed;
-            const orbitX = data.ox + Math.sin(data.angle) * 5;
-            const orbitY = data.oy + Math.cos(data.angle) * 5;
-            const orbitZ = data.oz + Math.sin(data.angle * 0.5) * 5;
+    // Parallax
+    homeCamera.position.x += (mouseX * 0.15 - homeCamera.position.x) * 0.05;
+    homeCamera.position.y += (-mouseY * 0.15 - homeCamera.position.y) * 0.05;
+    homeCamera.lookAt(0, 0, 0);
 
-            // Spring back to orbital target
-            data.vx += (orbitX - cx) * 0.04;
-            data.vy += (orbitY - cy) * 0.04;
-            data.vz += (orbitZ - cz) * 0.04;
-            
-            // Friction/damping
-            data.vx *= 0.85;
-            data.vy *= 0.85;
-            data.vz *= 0.85;
-            
-            // Write new
-            positions[i*3]   += data.vx;
-            positions[i*3+1] += data.vy;
-            positions[i*3+2] += data.vz;
-        }
-        
-        homeParticles.geometry.attributes.position.needsUpdate = true;
+    // Move Particles
+    const positions = neuralPoints.geometry.attributes.position.array;
+    const colors = neuralPoints.geometry.attributes.color.array;
+
+    for (let i = 0; i < particleCount; i++) {
+        let p = particlePositions[i];
+        let v = particleVelocities[i];
+        p.add(v);
+
+        if (p.x > 700) p.x = -700; else if (p.x < -700) p.x = 700;
+        if (p.y > 500) p.y = -500; else if (p.y < -500) p.y = 500;
+        if (p.z > 400) p.z = -400; else if (p.z < -400) p.z = 400;
+
+        positions[i * 3] = p.x;
+        positions[i * 3 + 1] = p.y;
+        positions[i * 3 + 2] = p.z;
     }
-    
+    neuralPoints.geometry.attributes.position.needsUpdate = true;
+
+    // Connect Lines
+    let vertexpos = 0;
+    let colorpos = 0;
+    let numLines = 0;
+
+    const linePositions = neuralLines.geometry.attributes.position.array;
+    const lineColors = neuralLines.geometry.attributes.color.array;
+
+    for (let i = 0; i < particleCount; i++) {
+        for (let j = i + 1; j < particleCount; j++) {
+            let dx = particlePositions[i].x - particlePositions[j].x;
+            let dy = particlePositions[i].y - particlePositions[j].y;
+            let dz = particlePositions[i].z - particlePositions[j].z;
+            let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+            if (dist < maxDistance) {
+                const alpha = 1.0 - (dist / maxDistance);
+
+                linePositions[vertexpos++] = particlePositions[i].x;
+                linePositions[vertexpos++] = particlePositions[i].y;
+                linePositions[vertexpos++] = particlePositions[i].z;
+
+                linePositions[vertexpos++] = particlePositions[j].x;
+                linePositions[vertexpos++] = particlePositions[j].y;
+                linePositions[vertexpos++] = particlePositions[j].z;
+
+                lineColors[colorpos++] = colors[i*3] * alpha;
+                lineColors[colorpos++] = colors[i*3+1] * alpha;
+                lineColors[colorpos++] = colors[i*3+2] * alpha;
+
+                lineColors[colorpos++] = colors[j*3] * alpha;
+                lineColors[colorpos++] = colors[j*3+1] * alpha;
+                lineColors[colorpos++] = colors[j*3+2] * alpha;
+
+                numLines++;
+            }
+        }
+    }
+
+    neuralLines.geometry.setDrawRange(0, numLines * 2);
+    neuralLines.geometry.attributes.position.needsUpdate = true;
+    neuralLines.geometry.attributes.color.needsUpdate = true;
+
+    // Ambient gentle rotation for the whole network
+    homeScene.rotation.y = time * 0.1;
+    homeScene.rotation.x = time * 0.05;
+
     homeRenderer.render(homeScene, homeCamera);
 }
 
-// Initialize on load
 window.addEventListener('load', initHomeParticles);
 </script>
 

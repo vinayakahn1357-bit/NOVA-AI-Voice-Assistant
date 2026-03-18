@@ -2895,6 +2895,17 @@ async function novaLoadUser() {
             homeGreeting.textContent = firstName ? `${greet}, ${firstName.toUpperCase()}.` : greet + '.';
         }
 
+        // Populate home page profile avatar + dropdown
+        const initial = (user.name || 'U').charAt(0).toUpperCase();
+        const profAvatar = document.getElementById('home-profile-avatar');
+        if (profAvatar) profAvatar.textContent = initial;
+        const profHeaderAvatar = document.getElementById('prof-header-avatar');
+        if (profHeaderAvatar) profHeaderAvatar.textContent = initial;
+        const profName = document.getElementById('prof-name');
+        if (profName) profName.textContent = user.name || 'User';
+        const profEmail = document.getElementById('prof-email');
+        if (profEmail) profEmail.textContent = user.email || '';
+
     } catch (e) {
         // Network error — still let user use the app (offline graceful)
         console.warn('[NOVA] Could not reach /auth/me:', e.message);
@@ -2910,3 +2921,19 @@ async function novaLogout() {
 
 // Load user info when DOM is ready
 document.addEventListener('DOMContentLoaded', novaLoadUser);
+
+// ─── Profile Dropdown Toggle ─────────────────────────────────────────────────
+function toggleProfileDropdown() {
+    const dd = document.getElementById('home-profile-dropdown');
+    if (!dd) return;
+    dd.classList.toggle('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('home-profile-wrap');
+    const dd = document.getElementById('home-profile-dropdown');
+    if (wrap && dd && !wrap.contains(e.target)) {
+        dd.classList.remove('open');
+    }
+});

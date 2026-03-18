@@ -12,6 +12,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         *,
         *::before,
@@ -38,13 +39,36 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: var(--dark);
+            background-color: #030712;
+            background-image: 
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 229, 255, 0.15) 0%, transparent 100%),
+                radial-gradient(ellipse 80% 50% at 50% 120%, rgba(188, 96, 211, 0.15) 0%, transparent 100%),
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+            background-attachment: fixed;
             color: var(--text);
             overflow-x: hidden;
             line-height: 1.6;
         }
 
         /* ─── Animated Background ─── */
+        #home-particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        #physics-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 1; /* Captures mouse safely above the canvas but below content */
+        }
+
         .bg-grid {
             position: fixed;
             inset: 0;
@@ -77,9 +101,10 @@
             align-items: center;
             justify-content: space-between;
             padding: 18px 48px;
-            background: rgba(8, 12, 20, 0.8);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border);
+            background: rgba(8, 12, 20, 0.6);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .nav-logo {
@@ -94,15 +119,10 @@
             color: white;
         }
 
-        .nav-logo-orb {
-            width: 36px;
+        .nav-logo img {
             height: 36px;
+            width: auto;
             border-radius: 50%;
-            background: linear-gradient(135deg, var(--cyan), var(--purple));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
             box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
             animation: orbPulse 3s ease-in-out infinite;
         }
@@ -315,140 +335,6 @@
             }
         }
 
-        /* ─── Orb Visualization ─── */
-        .hero-visual {
-            position: relative;
-            margin-top: 72px;
-            width: 320px;
-            height: 320px;
-            animation: fadeUp 0.8s ease 0.4s both;
-        }
-
-        .orb-core {
-            position: absolute;
-            inset: 60px;
-            border-radius: 50%;
-            background: radial-gradient(circle at 35% 30%,
-                    rgba(0, 229, 255, 0.6) 0%,
-                    rgba(0, 229, 255, 0.2) 40%,
-                    rgba(188, 96, 211, 0.3) 70%,
-                    transparent 100%);
-            box-shadow:
-                0 0 60px rgba(0, 229, 255, 0.4),
-                0 0 120px rgba(188, 96, 211, 0.2),
-                inset 0 0 40px rgba(0, 229, 255, 0.1);
-            animation: orbFloat 4s ease-in-out infinite;
-        }
-
-        @keyframes orbFloat {
-
-            0%,
-            100% {
-                transform: translateY(0) scale(1);
-            }
-
-            50% {
-                transform: translateY(-12px) scale(1.04);
-            }
-        }
-
-        .orb-ring {
-            position: absolute;
-            border-radius: 50%;
-            border: 1px solid rgba(0, 229, 255, 0.15);
-            animation: ringExpand 4s ease-in-out infinite;
-        }
-
-        .orb-ring:nth-child(1) {
-            inset: 40px;
-            animation-delay: 0s;
-        }
-
-        .orb-ring:nth-child(2) {
-            inset: 20px;
-            animation-delay: 0.5s;
-        }
-
-        .orb-ring:nth-child(3) {
-            inset: 0px;
-            border-color: rgba(188, 96, 211, 0.1);
-            animation-delay: 1s;
-        }
-
-        @keyframes ringExpand {
-
-            0%,
-            100% {
-                transform: scale(1);
-                opacity: 0.6;
-            }
-
-            50% {
-                transform: scale(1.04);
-                opacity: 1;
-            }
-        }
-
-        .orb-particles {
-            position: absolute;
-            inset: 0;
-            animation: slowRotate 12s linear infinite;
-        }
-
-        .orb-particle {
-            position: absolute;
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: var(--cyan);
-            box-shadow: 0 0 8px var(--cyan);
-        }
-
-        .orb-particle:nth-child(1) {
-            top: 10%;
-            left: 50%;
-        }
-
-        .orb-particle:nth-child(2) {
-            top: 50%;
-            right: 5%;
-            background: var(--purple);
-            box-shadow: 0 0 8px var(--purple);
-        }
-
-        .orb-particle:nth-child(3) {
-            bottom: 12%;
-            left: 20%;
-            background: var(--gold);
-            box-shadow: 0 0 8px var(--gold);
-        }
-
-        .orb-particle:nth-child(4) {
-            bottom: 30%;
-            right: 15%;
-        }
-
-        @keyframes slowRotate {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .orb-label {
-            position: absolute;
-            bottom: -40px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: 1.8rem;
-            font-weight: 700;
-            letter-spacing: 0.15em;
-            background: linear-gradient(135deg, var(--cyan), var(--purple));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
         /* ─── TRUSTED BY ─── */
         .trusted {
             position: relative;
@@ -522,13 +408,14 @@
         }
 
         .feature-card {
-            background: var(--card);
-            border: 1px solid var(--border);
+            background: rgba(10, 15, 25, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 20px;
-            padding: 32px;
-            transition: all 0.3s;
+            padding: 36px 32px;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative;
             overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.02);
         }
 
         .feature-card::before {
@@ -542,8 +429,9 @@
         }
 
         .feature-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(0, 229, 255, 0.2);
+            transform: translateY(-8px);
+            border-color: rgba(0, 229, 255, 0.25);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(0, 229, 255, 0.05);
         }
 
         .feature-card:hover::before {
@@ -851,17 +739,35 @@
                 padding: 30px 20px;
             }
         }
+
+        /* Float Logo Animation */
+        .hero-logo-img {
+            height: 140px;
+            width: auto;
+            border-radius: 50%;
+            box-shadow: 0 0 30px rgba(0, 229, 255, 0.4), inset 0 0 20px rgba(255,255,255,0.4);
+            margin-bottom: 32px;
+            animation: orbFloat 4s ease-in-out infinite;
+        }
+        @keyframes orbFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); box-shadow: 0 12px 40px rgba(0, 229, 255, 0.6), inset 0 0 20px rgba(255,255,255,0.4); }
+        }
     </style>
 </head>
 
 <body>
+    <!-- 3D Canvas -->
+    <canvas id="home-particles"></canvas>
+    <div id="physics-layer"></div>
+
     <div class="bg-grid"></div>
     <div class="bg-glow"></div>
 
     <!-- NAV -->
     <nav>
         <a href="/" class="nav-logo">
-            <div class="nav-logo-orb">✦</div>
+            <img src="/static/nova_logo.png" alt="NOVA Logo">
             NOVA
         </a>
         <div class="nav-links">
@@ -875,8 +781,8 @@
         </div>
     </nav>
 
-    <!-- HERO -->
     <section class="hero">
+        <img src="/static/nova_logo.png" alt="NOVA Logo" class="hero-logo-img">
         <div class="hero-badge">✦ Powered by Hybrid AI Intelligence</div>
         <h1 class="hero-title">
             Meet <span class="gradient-text">NOVA</span><br>
@@ -889,20 +795,6 @@
         <div class="hero-actions">
             <a href="/login" class="btn-hero-primary">🚀 Get Started Free</a>
             <a href="#features" class="btn-hero-ghost">✦ Explore Features</a>
-        </div>
-
-        <div class="hero-visual">
-            <div class="orb-ring"></div>
-            <div class="orb-ring"></div>
-            <div class="orb-ring"></div>
-            <div class="orb-core"></div>
-            <div class="orb-particles">
-                <div class="orb-particle"></div>
-                <div class="orb-particle"></div>
-                <div class="orb-particle"></div>
-                <div class="orb-particle"></div>
-            </div>
-            <div class="orb-label">N O V A</div>
         </div>
     </section>
 
@@ -1036,6 +928,184 @@
             });
         }, { threshold: 0.12 });
         revealEls.forEach(el => observer.observe(el));
+
+        // ── 3D Masterpiece Neural Network ─────────────────────────────────────
+        let homeScene, homeCamera, homeRenderer, neuralPoints, neuralLines;
+        let mouseX = 0, mouseY = 0;
+        let homeAnimId;
+        const windowHalfX = window.innerWidth / 2;
+        const windowHalfY = window.innerHeight / 2;
+        let time = 0;
+        
+        const particleCount = 200; // Optimal for lines
+        const maxDistance = 150;
+        let particlePositions = [];
+        let particleVelocities = [];
+
+        function initHomeParticles() {
+            const canvas = document.getElementById('home-particles');
+            if (!canvas) return;
+            if (typeof THREE === 'undefined') return;
+
+            homeScene = new THREE.Scene();
+            
+            homeCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 2000);
+            homeCamera.position.z = 400;
+
+            homeRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+            homeRenderer.setPixelRatio(window.devicePixelRatio);
+            homeRenderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Particles
+            const pGeometry = new THREE.BufferGeometry();
+            const pPositions = new Float32Array(particleCount * 3);
+            const pColors = new Float32Array(particleCount * 3);
+
+            const colorCyan = new THREE.Color(0x00e5ff);
+            const colorPurple = new THREE.Color(0xbc60d3);
+
+            for (let i = 0; i < particleCount; i++) {
+                const x = (Math.random() - 0.5) * 1400;
+                const y = (Math.random() - 0.5) * 1000;
+                const z = (Math.random() - 0.5) * 800;
+
+                pPositions[i * 3] = x;
+                pPositions[i * 3 + 1] = y;
+                pPositions[i * 3 + 2] = z;
+
+                particlePositions.push(new THREE.Vector3(x, y, z));
+                particleVelocities.push(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6));
+
+                let isCyan = Math.random() > 0.4;
+                pColors[i * 3] = isCyan ? colorCyan.r : colorPurple.r;
+                pColors[i * 3 + 1] = isCyan ? colorCyan.g : colorPurple.g;
+                pColors[i * 3 + 2] = isCyan ? colorCyan.b : colorPurple.b;
+            }
+
+            pGeometry.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+            pGeometry.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
+
+            const pMaterial = new THREE.PointsMaterial({
+                size: 3, vertexColors: true, transparent: true, opacity: 0.9,
+                sizeAttenuation: true, blending: THREE.AdditiveBlending
+            });
+            neuralPoints = new THREE.Points(pGeometry, pMaterial);
+            homeScene.add(neuralPoints);
+
+            // Lines
+            const lGeometry = new THREE.BufferGeometry();
+            const maxLines = particleCount * particleCount;
+            const lPositions = new Float32Array(maxLines * 3);
+            const lColors = new Float32Array(maxLines * 3);
+            
+            lGeometry.setAttribute('position', new THREE.BufferAttribute(lPositions, 3).setUsage(THREE.DynamicDrawUsage));
+            lGeometry.setAttribute('color', new THREE.BufferAttribute(lColors, 3).setUsage(THREE.DynamicDrawUsage));
+
+            const lMaterial = new THREE.LineBasicMaterial({
+                vertexColors: true, transparent: true, opacity: 0.35,
+                blending: THREE.AdditiveBlending
+            });
+            neuralLines = new THREE.LineSegments(lGeometry, lMaterial);
+            homeScene.add(neuralLines);
+
+            const layer = document.getElementById('physics-layer');
+            if (layer) layer.addEventListener('mousemove', onDocumentMouseMoveHome);
+            window.addEventListener('resize', onWindowResizeHome);
+
+            animateHomeParticles();
+        }
+
+        function onDocumentMouseMoveHome(event) {
+            mouseX = (event.clientX - windowHalfX);
+            mouseY = (event.clientY - windowHalfY);
+        }
+
+        function onWindowResizeHome() {
+            if(!homeCamera || !homeRenderer) return;
+            homeCamera.aspect = window.innerWidth / window.innerHeight;
+            homeCamera.updateProjectionMatrix();
+            homeRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animateHomeParticles() {
+            homeAnimId = requestAnimationFrame(animateHomeParticles);
+            time += 0.01;
+            
+            // Parallax
+            homeCamera.position.x += (mouseX * 0.15 - homeCamera.position.x) * 0.05;
+            homeCamera.position.y += (-mouseY * 0.15 - homeCamera.position.y) * 0.05;
+            homeCamera.lookAt(0, 0, 0);
+
+            // Move Particles
+            const positions = neuralPoints.geometry.attributes.position.array;
+            const colors = neuralPoints.geometry.attributes.color.array;
+
+            for (let i = 0; i < particleCount; i++) {
+                let p = particlePositions[i];
+                let v = particleVelocities[i];
+                p.add(v);
+
+                if (p.x > 700) p.x = -700; else if (p.x < -700) p.x = 700;
+                if (p.y > 500) p.y = -500; else if (p.y < -500) p.y = 500;
+                if (p.z > 400) p.z = -400; else if (p.z < -400) p.z = 400;
+
+                positions[i * 3] = p.x;
+                positions[i * 3 + 1] = p.y;
+                positions[i * 3 + 2] = p.z;
+            }
+            neuralPoints.geometry.attributes.position.needsUpdate = true;
+
+            // Connect Lines
+            let vertexpos = 0;
+            let colorpos = 0;
+            let numLines = 0;
+
+            const linePositions = neuralLines.geometry.attributes.position.array;
+            const lineColors = neuralLines.geometry.attributes.color.array;
+
+            for (let i = 0; i < particleCount; i++) {
+                for (let j = i + 1; j < particleCount; j++) {
+                    let dx = particlePositions[i].x - particlePositions[j].x;
+                    let dy = particlePositions[i].y - particlePositions[j].y;
+                    let dz = particlePositions[i].z - particlePositions[j].z;
+                    let dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+                    if (dist < maxDistance) {
+                        const alpha = 1.0 - (dist / maxDistance);
+
+                        linePositions[vertexpos++] = particlePositions[i].x;
+                        linePositions[vertexpos++] = particlePositions[i].y;
+                        linePositions[vertexpos++] = particlePositions[i].z;
+
+                        linePositions[vertexpos++] = particlePositions[j].x;
+                        linePositions[vertexpos++] = particlePositions[j].y;
+                        linePositions[vertexpos++] = particlePositions[j].z;
+
+                        lineColors[colorpos++] = colors[i*3] * alpha;
+                        lineColors[colorpos++] = colors[i*3+1] * alpha;
+                        lineColors[colorpos++] = colors[i*3+2] * alpha;
+
+                        lineColors[colorpos++] = colors[j*3] * alpha;
+                        lineColors[colorpos++] = colors[j*3+1] * alpha;
+                        lineColors[colorpos++] = colors[j*3+2] * alpha;
+
+                        numLines++;
+                    }
+                }
+            }
+
+            neuralLines.geometry.setDrawRange(0, numLines * 2);
+            neuralLines.geometry.attributes.position.needsUpdate = true;
+            neuralLines.geometry.attributes.color.needsUpdate = true;
+
+            // Ambient gentle rotation for the whole network
+            homeScene.rotation.y = time * 0.1;
+            homeScene.rotation.x = time * 0.05;
+
+            homeRenderer.render(homeScene, homeCamera);
+        }
+
+        window.addEventListener('load', initHomeParticles);
     </script>
 </body>
 
