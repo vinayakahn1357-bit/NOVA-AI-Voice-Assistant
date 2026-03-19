@@ -59,6 +59,7 @@ print(f"[NOVA] Background thread pool: {_BG_WORKERS} workers")
 
 # ─── Load .env ────────────────────────────────────────────────────────────────
 load_dotenv()
+print("CLIENT ID:", os.environ.get("GOOGLE_CLIENT_ID"))
 
 # ─── Determine absolute path for Frontend ─────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -480,21 +481,49 @@ def auth_me():
     })
 
 
+def _get_base_url() -> str:
+    """
+    Build the canonical base URL for OAuth redirect URIs.
+
+    Priority order:
+      1. NOVA_BASE_URL  env var  (always set this on Vercel / production)
+      2. X-Forwarded-Proto header  (Vercel proxy sets this to 'https')
+      3. request.host_url  (only reliable on localhost)
+    """
+    # 1. Explicit override — most reliable for production
+    base = os.getenv("NOVA_BASE_URL", "").rstrip("/")
+    if base:
+        return base
+
+    # 2. Detect scheme from Vercel / proxy headers
+    proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip()
+    host  = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
+    if not host:
+        host = request.host  # fallback to Flask's detected host
+
+    if proto in ("https", "http"):
+        return f"{proto}://{host}"
+
+    # 3. Last resort — works fine on localhost
+    return request.host_url.rstrip("/")
+
+
 @app.route("/auth/google")
 def auth_google():
-    """
-    Google OAuth 2.0 redirect.
-    To activate: add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env,
-    install authlib (pip install authlib), and replace this stub.
-    """
+    """Google OAuth 2.0 — redirect to Google's consent screen."""
     google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
     if not google_client_id:
-        # No Google credentials — redirect to login with info message
         return redirect("/login?error=google_not_configured")
 
-    # Build the Google OAuth authorization URL
-    base = os.getenv("NOVA_BASE_URL", request.host_url.rstrip("/"))
+    # CSRF protection: store a random state token in the session
+    state = uuid.uuid4().hex
+    session["oauth_state"] = state
+
+    base         = _get_base_url()
     redirect_uri = base + "/auth/google/callback"
+    print(f"[NOVA] Google OAuth → redirect_uri: {redirect_uri}")
+
+    from urllib.parse import urlencode
     params = {
         "client_id":     google_client_id,
         "redirect_uri":  redirect_uri,
@@ -502,20 +531,30 @@ def auth_google():
         "scope":         "openid email profile",
         "access_type":   "offline",
         "prompt":        "select_account",
+        "state":         state,
     }
-    from urllib.parse import urlencode
     return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
 
 
 @app.route("/auth/google/callback")
 def auth_google_callback():
-    """Google OAuth callback — exchanges code for user info."""
+    """Google OAuth callback — exchanges code for tokens and logs the user in."""
+    # Check for OAuth errors from Google
     error = request.args.get("error")
     if error:
+        print(f"[NOVA] Google OAuth error from Google: {error}")
         return redirect("/login?error=google_cancelled")
 
-    code = request.args.get("code")
+    code  = request.args.get("code")
+    state = request.args.get("state", "")
+
     if not code:
+        return redirect("/login?error=google_failed")
+
+    # CSRF check — state must match what we stored before redirecting
+    expected_state = session.pop("oauth_state", None)
+    if not expected_state or state != expected_state:
+        print("[NOVA] Google OAuth CSRF state mismatch!")
         return redirect("/login?error=google_failed")
 
     google_client_id     = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -523,35 +562,54 @@ def auth_google_callback():
     if not google_client_id or not google_client_secret:
         return redirect("/login?error=google_not_configured")
 
-    base = os.getenv("NOVA_BASE_URL", request.host_url.rstrip("/"))
+    # Build the SAME redirect_uri used in /auth/google (must match exactly)
+    base         = _get_base_url()
     redirect_uri = base + "/auth/google/callback"
+    print(f"[NOVA] Google callback → redirect_uri: {redirect_uri}")
 
-    # Exchange code for tokens
-    token_res = requests.post("https://oauth2.googleapis.com/token", data={
-        "code":          code,
-        "client_id":     google_client_id,
-        "client_secret": google_client_secret,
-        "redirect_uri":  redirect_uri,
-        "grant_type":    "authorization_code",
-    })
+    # ── Step 1: Exchange authorisation code for access token ─────────────────
+    token_res = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code":          code,
+            "client_id":     google_client_id,
+            "client_secret": google_client_secret,
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code",
+        },
+        timeout=15,
+    )
     if not token_res.ok:
-        print(f"[NOVA] Google token exchange FAILED: {token_res.status_code} — {token_res.text}")
-        print(f"[NOVA] Used redirect_uri: {redirect_uri}")
+        print(f"[NOVA] Google token exchange FAILED: {token_res.status_code} — {token_res.text[:300]}")
         return redirect("/login?error=google_token_failed")
 
-    id_token_str = token_res.json().get("access_token", "")
-    userinfo_res = requests.get("https://www.googleapis.com/oauth2/v3/userinfo",
-                                headers={"Authorization": f"Bearer {id_token_str}"})
+    token_data   = token_res.json()
+    access_token = token_data.get("access_token", "")
+    if not access_token:
+        print(f"[NOVA] Google token response missing access_token: {token_data}")
+        return redirect("/login?error=google_token_failed")
+
+    # ── Step 2: Fetch user profile from Google ───────────────────────────────
+    userinfo_res = requests.get(
+        "https://www.googleapis.com/oauth2/v3/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
     if not userinfo_res.ok:
+        print(f"[NOVA] Google userinfo FAILED: {userinfo_res.status_code} — {userinfo_res.text[:200]}")
         return redirect("/login?error=google_userinfo_failed")
 
     info  = userinfo_res.json()
-    email = info.get("email", "").lower()
-    name  = info.get("name", email.split("@")[0])
+    email = info.get("email", "").strip().lower()
+    name  = info.get("name", "").strip() or email.split("@")[0]
 
+    if not email:
+        print("[NOVA] Google userinfo returned no email address!")
+        return redirect("/login?error=google_userinfo_failed")
+
+    # ── Step 3: Upsert user in our store ─────────────────────────────────────
     users = _load_users()
     if email not in users:
-        # Auto-create account for Google users (no password needed)
         users[email] = {
             "id":       str(uuid.uuid4()),
             "name":     name,
@@ -562,11 +620,19 @@ def auth_google_callback():
             "created":  int(time.time()),
         }
         _save_users(users)
+        print(f"[NOVA] New Google user created: {email}")
+    else:
+        # Update name in case it changed
+        if name and users[email].get("name") != name:
+            users[email]["name"] = name
+            _save_users(users)
 
+    # ── Step 4: Create Flask session ─────────────────────────────────────────
     session.permanent = True
     session["user_id"]    = users[email]["id"]
     session["user_email"] = email
-    session["user_name"]  = name
+    session["user_name"]  = users[email]["name"]
+    print(f"[NOVA] Google login success: {email}")
     return redirect("/app")
 
 
