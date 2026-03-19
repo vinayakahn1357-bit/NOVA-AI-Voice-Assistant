@@ -21,13 +21,14 @@ import copy
 import requests
 from datetime import date
 
-if os.getenv("VERCEL") == "1":
+if os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV"):
     DB_FILE      = "/tmp/nova_memory.db"
     LEGACY_JSON  = "/tmp/nova_memory.json"
 else:
     DB_FILE      = os.path.join(os.path.dirname(__file__), "nova_memory.db")
     LEGACY_JSON  = os.path.join(os.path.dirname(__file__), "nova_memory.json")
 OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 _DDL = """
 PRAGMA journal_mode = WAL;
@@ -266,6 +267,77 @@ class NovaMemory:
             + "\n--- End of Memory ---"
         )
 
+    # ── LLM Routing (provider-aware) ────────────────────────────────────────
+
+    def _call_llm(self, prompt: str, model: str, provider_config: dict,
+                  temperature: float = 0.1, max_tokens: int = 300) -> str:
+        """
+        Call an LLM via the best available provider.
+        Returns the raw text response, or empty string on failure.
+        Routes: Groq API → Ollama Cloud → Local Ollama (in priority order).
+        """
+        provider = provider_config.get("provider", "ollama")
+
+        # ── Try Groq first if configured ──────────────────────────────
+        groq_key = provider_config.get("groq_api_key", "")
+        if groq_key and provider in ("groq", "hybrid"):
+            groq_model = provider_config.get("groq_model", "llama-3.3-70b-versatile")
+            try:
+                headers = {
+                    "Authorization": f"Bearer {groq_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": groq_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                }
+                r = requests.post(GROQ_API_URL, json=payload,
+                                  headers=headers, timeout=30)
+                if r.status_code == 200:
+                    data = r.json()
+                    return (data.get("choices", [{}])[0]
+                            .get("message", {}).get("content", "")).strip()
+            except Exception as e:
+                print(f"[NOVA Memory] Groq extraction failed: {e}")
+
+        # ── Try Ollama Cloud if configured ────────────────────────────
+        cloud_key = provider_config.get("ollama_api_key", "")
+        cloud_url = provider_config.get("ollama_cloud_url", "")
+        if cloud_key and cloud_url and provider in ("ollama_cloud", "hybrid"):
+            try:
+                headers = {"Authorization": f"Bearer {cloud_key}"}
+                payload = {
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                }
+                r = requests.post(cloud_url, json=payload,
+                                  headers=headers, timeout=30)
+                if r.status_code == 200:
+                    return r.json().get("response", "").strip()
+            except Exception as e:
+                print(f"[NOVA Memory] Ollama Cloud extraction failed: {e}")
+
+        # ── Fallback to local Ollama ──────────────────────────────────
+        try:
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": temperature, "num_predict": max_tokens},
+            }
+            r = requests.post(OLLAMA_URL, json=payload, timeout=30)
+            if r.status_code == 200:
+                return r.json().get("response", "").strip()
+        except Exception as e:
+            print(f"[NOVA Memory] Local Ollama extraction failed: {e}")
+
+        return ""
+
     # ── Learning ──────────────────────────────────────────────────────────────
 
     def record_conversation(self):
@@ -293,14 +365,18 @@ class NovaMemory:
 
             self._conn.commit()
 
-    def extract_and_store(self, user_msg: str, nova_reply: str, model: str = "mistral"):
+    def extract_and_store(self, user_msg: str, nova_reply: str,
+                          model: str = "mistral", provider_config: dict = None):
         """
         Run in a background thread after each conversation turn.
         Asks the LLM to extract facts / interests / preferences.
+        provider_config: {"provider": str, "groq_api_key": str, "groq_model": str,
+                          "ollama_api_key": str, "ollama_cloud_url": str}
         """
-        self._extract_worker(user_msg, nova_reply, model)
+        self._extract_worker(user_msg, nova_reply, model, provider_config or {})
 
-    def _extract_worker(self, user_msg: str, nova_reply: str, model: str):
+    def _extract_worker(self, user_msg: str, nova_reply: str,
+                         model: str, provider_config: dict):
         try:
             extraction_prompt = f"""You are a memory extraction agent for NOVA AI assistant.
 
@@ -328,18 +404,11 @@ Rules:
 - Keep each fact concise (under 15 words).
 - Do NOT include facts about Nova, only about the user.
 """
-            payload = {
-                "model": model,
-                "prompt": extraction_prompt,
-                "stream": False,
-                "options": {"temperature": 0.1, "num_predict": 300},
-            }
-
-            r = requests.post(OLLAMA_URL, json=payload, timeout=30)
-            if r.status_code != 200:
+            raw = self._call_llm(extraction_prompt, model, provider_config,
+                                 temperature=0.1, max_tokens=300)
+            if not raw:
                 return
 
-            raw = r.json().get("response", "").strip()
             start = raw.find("{")
             end   = raw.rfind("}") + 1
             if start == -1 or end == 0:
@@ -398,13 +467,16 @@ Rules:
             print(f"[NOVA Memory] Stored: {added} new facts, "
                   f"{len(extracted.get('interests', []))} interests")
 
-    def generate_daily_summary(self, conversation_log: list, model: str = "mistral"):
+    def generate_daily_summary(self, conversation_log: list,
+                                model: str = "mistral",
+                                provider_config: dict = None):
         """Generate and store a short daily summary from the day's conversation log."""
         if not conversation_log:
             return
-        self._daily_summary_worker(conversation_log, model)
+        self._daily_summary_worker(conversation_log, model, provider_config or {})
 
-    def _daily_summary_worker(self, conversation_log: list, model: str):
+    def _daily_summary_worker(self, conversation_log: list, model: str,
+                               provider_config: dict):
         try:
             convo_text = "\n".join(
                 f"{'User' if m['role'] == 'user' else 'Nova'}: {m['content'][:200]}"
@@ -415,30 +487,23 @@ Rules:
                 "discussed, asked about, or accomplished today. Be specific and concise.\n\n"
                 f"Conversation:\n{convo_text}\n\nSummary:"
             )
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.3, "num_predict": 80},
-            }
-            r = requests.post(OLLAMA_URL, json=payload, timeout=30)
-            if r.status_code != 200:
+            summary = self._call_llm(prompt, model, provider_config,
+                                     temperature=0.3, max_tokens=80)
+            if not summary:
                 return
-            summary = r.json().get("response", "").strip()
-            if summary:
-                today = str(date.today())
-                with self._lock:
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO daily_summaries (day, summary) VALUES (?, ?)",
-                        (today, summary)
-                    )
-                    # Keep only last 30 days
-                    self._conn.execute(
-                        "DELETE FROM daily_summaries WHERE day NOT IN "
-                        "(SELECT day FROM daily_summaries ORDER BY day DESC LIMIT 30)"
-                    )
-                    self._conn.commit()
-                print(f"[NOVA Memory] Daily summary saved for {today}")
+            today = str(date.today())
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO daily_summaries (day, summary) VALUES (?, ?)",
+                    (today, summary)
+                )
+                # Keep only last 30 days
+                self._conn.execute(
+                    "DELETE FROM daily_summaries WHERE day NOT IN "
+                    "(SELECT day FROM daily_summaries ORDER BY day DESC LIMIT 30)"
+                )
+                self._conn.commit()
+            print(f"[NOVA Memory] Daily summary saved for {today}")
         except Exception as e:
             print(f"[NOVA Memory] Daily summary error: {e}")
 

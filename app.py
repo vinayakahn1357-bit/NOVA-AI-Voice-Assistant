@@ -59,7 +59,6 @@ print(f"[NOVA] Background thread pool: {_BG_WORKERS} workers")
 
 # ─── Load .env ────────────────────────────────────────────────────────────────
 load_dotenv()
-print("CLIENT ID:", os.environ.get("GOOGLE_CLIENT_ID"))
 
 # ─── Determine absolute path for Frontend ─────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -132,10 +131,15 @@ def login_required(f):
 
 print("[NOVA] Auth system ready.")
 
-# ─── CORS (allow all origins for local dev) ──────────────────────────────────
+# ─── CORS ─────────────────────────────────────────────────────────────────────
 @app.after_request
 def add_cors(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    else:
+        response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Session-Id"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
@@ -203,6 +207,16 @@ nova_settings = {
     "hybrid_ollama_model":  os.getenv("NOVA_HYBRID_OLLAMA_MODEL", "mistral"),
     "hybrid_groq_model":    os.getenv("NOVA_HYBRID_GROQ_MODEL", "llama-3.3-70b-versatile"),
 }
+
+def _build_provider_config() -> dict:
+    """Snapshot current settings for background memory tasks."""
+    return {
+        "provider":         nova_settings["provider"],
+        "groq_api_key":     nova_settings["groq_api_key"],
+        "groq_model":       nova_settings["groq_model"],
+        "ollama_api_key":   nova_settings["ollama_api_key"],
+        "ollama_cloud_url": nova_settings["ollama_cloud_url"],
+    }
 
 # ─── Ollama Cloud Sanity Check ────────────────────────────────────────────────
 def _ollama_cloud_configured() -> bool:
@@ -803,7 +817,7 @@ def chat():
 
         # ── Learning: offload to background thread pool (non-blocking) ───────
         bg_pool.submit(memory.record_conversation)
-        bg_pool.submit(memory.extract_and_store, user_message, ai_response, active_model)
+        bg_pool.submit(memory.extract_and_store, user_message, ai_response, active_model, _build_provider_config())
 
         return jsonify({
             "reply": ai_response,
@@ -1021,7 +1035,7 @@ def chat_stream():
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
                         bg_pool.submit(memory.record_conversation)
-                        bg_pool.submit(memory.extract_and_store, user_message, complete_reply, active_model)
+                        bg_pool.submit(memory.extract_and_store, user_message, complete_reply, active_model, _build_provider_config())
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'model': active_model})}\n\n"
 
                 elif use_groq:
@@ -1064,7 +1078,7 @@ def chat_stream():
                         append_message(session_id, "nova", complete_reply)
                         bg_pool.submit(memory.record_conversation)
                         bg_pool.submit(memory.extract_and_store,
-                                       user_message, complete_reply, active_model)
+                                       user_message, complete_reply, active_model, _build_provider_config())
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
                 elif use_ollama_cloud:
@@ -1084,7 +1098,7 @@ def chat_stream():
                                     append_message(session_id, "nova", complete_reply)
                                     bg_pool.submit(memory.record_conversation)
                                     bg_pool.submit(memory.extract_and_store,
-                                                   user_message, complete_reply, active_model)
+                                                   user_message, complete_reply, active_model, _build_provider_config())
                                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                                     break
                             except json.JSONDecodeError:
@@ -1120,7 +1134,7 @@ def chat_stream():
                                     append_message(session_id, "nova", complete_reply)
                                     bg_pool.submit(memory.record_conversation)
                                     bg_pool.submit(memory.extract_and_store,
-                                                   user_message, complete_reply, active_model)
+                                                   user_message, complete_reply, active_model, _build_provider_config())
                                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                                     break
                             except json.JSONDecodeError:
@@ -1167,7 +1181,7 @@ def generate_summary():
     session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
     history = get_history(session_id)
     if history:
-        memory.generate_daily_summary(history, nova_settings["model"])
+        memory.generate_daily_summary(history, nova_settings["model"], _build_provider_config())
         return jsonify({"status": "ok", "message": "Daily summary generation started."})
     return jsonify({"status": "skipped", "message": "No conversation history for this session."})
 
@@ -1254,7 +1268,7 @@ def reset_conversation():
         # Generate daily summary before resetting
         history = get_history(session_id)
         if history:
-            bg_pool.submit(memory.generate_daily_summary, history, nova_settings["model"])
+            bg_pool.submit(memory.generate_daily_summary, history, nova_settings["model"], _build_provider_config())
         _db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         _db.commit()
     else:
@@ -1308,7 +1322,7 @@ def list_models():
 def system_status():
     mem = psutil.virtual_memory()
     payload = {
-        "cpu": psutil.cpu_percent(interval=0.5),
+        "cpu": psutil.cpu_percent(interval=0),
         "cpu_cores_logical":  CPU_CORES_LOGICAL,
         "cpu_cores_physical": CPU_CORES_PHYSICAL,
         "cpu_threads_per_core": CPU_CORES_LOGICAL // max(1, CPU_CORES_PHYSICAL),
@@ -1317,12 +1331,8 @@ def system_status():
         "memory_total_gb": round(mem.total / (1024 ** 3), 2),
         "tasks": len(psutil.pids()),
         "bg_pool_workers": _BG_WORKERS,
-        "gpu": None,
+        "gpu": GPU_INFO,
     }
-    # Refresh GPU stats each request (fast call)
-    gpu = _detect_gpu()
-    if gpu:
-        payload["gpu"] = gpu
     return jsonify(payload)
 
 

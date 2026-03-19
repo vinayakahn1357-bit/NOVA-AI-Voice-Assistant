@@ -22,9 +22,13 @@ function showView(viewName) {
     if (target) target.classList.add('view-active');
 
     // Update nav bar active state
-    document.querySelectorAll('.bn-tab').forEach(t => t.classList.remove('active'));
-    const navBtn = document.getElementById('bn-' + viewName);
-    if (navBtn) navBtn.classList.add('active');
+    document.querySelectorAll('.hbn-tab').forEach(t => t.classList.remove('active'));
+    // Find matching nav button by checking onclick content
+    document.querySelectorAll('.hbn-tab').forEach(btn => {
+        if (btn.getAttribute('onclick')?.includes("'" + viewName + "'")) {
+            btn.classList.add('active');
+        }
+    });
 
     // View-specific initialisers
     if (viewName === 'chat') {
@@ -2041,8 +2045,8 @@ let homeScene, homeCamera, homeRenderer, homeParticles;
 let mouseX = 0, mouseY = 0;
 let homeAnimId;
 let logoGeoData = [];
-const windowHalfX = window.innerWidth / 2;
-const windowHalfY = window.innerHeight / 2;
+let windowHalfX = window.innerWidth / 2;
+let windowHalfY = window.innerHeight / 2;
 const logoParticleCount = 4000;
 
 function initHomeParticles() {
@@ -2151,6 +2155,8 @@ function onWindowResizeHome() {
     homeCamera.aspect = window.innerWidth / window.innerHeight;
     homeCamera.updateProjectionMatrix();
     homeRenderer.setSize(window.innerWidth, window.innerHeight);
+    windowHalfX = window.innerWidth / 2;
+    windowHalfY = window.innerHeight / 2;
 }
 
 function animateHomeParticles() {
@@ -2310,78 +2316,8 @@ updateOrbNodes();
 
 // ─── Home Page Particle Canvas ────────────────────────────────────────────────
 let homeParticlesInitialized = false;
-function initHomeParticles() {
-    if (homeParticlesInitialized) return;
-    homeParticlesInitialized = true;
+// initHomeParticles 2D (removed — 3D Three.js version above is used instead)
 
-    const canvas = document.getElementById('home-particles');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-
-    function resize() {
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
-    }
-    resize();
-    window.addEventListener('resize', resize);
-
-    const NUM_DOTS = 80;
-    const dots = Array.from({ length: NUM_DOTS }, () => ({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        r: Math.random() * 1.5 + 0.5,
-        alpha: Math.random() * 0.5 + 0.2
-    }));
-
-    const LINE_DIST = 120;
-
-    function animate() {
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Move dots
-        dots.forEach(d => {
-            d.x += d.vx;
-            d.y += d.vy;
-            if (d.x < 0) d.x = canvas.width;
-            if (d.x > canvas.width) d.x = 0;
-            if (d.y < 0) d.y = canvas.height;
-            if (d.y > canvas.height) d.y = 0;
-        });
-
-        // Draw connections
-        for (let i = 0; i < dots.length; i++) {
-            for (let j = i + 1; j < dots.length; j++) {
-                const dx = dots[i].x - dots[j].x;
-                const dy = dots[i].y - dots[j].y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < LINE_DIST) {
-                    const opacity = (1 - dist / LINE_DIST) * 0.25;
-                    ctx.strokeStyle = `rgba(0, 180, 255, ${opacity})`;
-                    ctx.lineWidth = 0.5;
-                    ctx.beginPath();
-                    ctx.moveTo(dots[i].x, dots[i].y);
-                    ctx.lineTo(dots[j].x, dots[j].y);
-                    ctx.stroke();
-                }
-            }
-        }
-
-        // Draw dots
-        dots.forEach(d => {
-            ctx.beginPath();
-            ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(0, 210, 255, ${d.alpha})`;
-            ctx.fill();
-        });
-
-        requestAnimationFrame(animate);
-    }
-    animate();
-}
 
 // ─── Weather Widget ───────────────────────────────────────────────────────────
 const WEATHER_CODES = {
@@ -2447,10 +2383,11 @@ function buildMiniCal() {
     }
     cal.innerHTML = html;
 
-    // Update event count based on day of week
+    // Deterministic event count seeded by day of month (not random)
     const eventEl = document.getElementById('event-count');
     const dayOfWeek = now.getDay();
-    const events = (dayOfWeek === 0 || dayOfWeek === 6) ? 0 : Math.floor(Math.random() * 4) + 1;
+    const dayOfMonth = now.getDate();
+    const events = (dayOfWeek === 0 || dayOfWeek === 6) ? 0 : ((dayOfMonth % 4) + 1);
     if (eventEl) eventEl.textContent = `${events} EVENT${events !== 1 ? 'S' : ''}`;
 }
 
@@ -2509,7 +2446,7 @@ async function fetchNews() {
             const title = escapeHtml((item.title || '').slice(0, 90));
             const link = escapeHtml(item.link || '#');
             return `
-            <div class="news-item" onclick="window.open('${link}', '_blank')">
+            <div class="news-item" data-link="${link}">
                 <div class="news-thumb">${icon}</div>
                 <div class="news-text">
                     <div class="news-title">${title}</div>
@@ -2517,6 +2454,12 @@ async function fetchNews() {
                 </div>
             </div>`;
         }).join('');
+
+        // Bind click handlers safely (no inline onclick)
+        newsEl.querySelectorAll('.news-item[data-link]').forEach(el => {
+            el.addEventListener('click', () => window.open(el.dataset.link, '_blank'));
+            el.style.cursor = 'pointer';
+        });
     } catch (e) {
         newsEl.innerHTML = `
             <div class="news-item">
@@ -2623,6 +2566,15 @@ function initVoiceParticles() {
         voiceParticleAF = requestAnimationFrame(draw);
     }
     if (voiceParticleAF) cancelAnimationFrame(voiceParticleAF);
+
+    // Resize on window resize
+    window.addEventListener('resize', () => {
+        if (voiceParticleCanvas) {
+            voiceParticleCanvas.width = window.innerWidth;
+            voiceParticleCanvas.height = window.innerHeight;
+        }
+    });
+
     draw();
 }
 

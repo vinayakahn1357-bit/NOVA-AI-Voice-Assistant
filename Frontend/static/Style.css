@@ -4711,14 +4711,30 @@ body {
 
 /* ─── HOME PAGE LAYOUT ────────────────────────────────────────────────── */
 #view-home {
-    background: radial-gradient(ellipse at 50% 0%, rgba(10, 40, 80, 0.35) 0%, transparent 55%),
-        radial-gradient(ellipse at 80% 85%, rgba(15, 50, 100, 0.12) 0%, transparent 45%),
-        radial-gradient(ellipse at 15% 90%, rgba(20, 55, 110, 0.08) 0%, transparent 40%),
-        linear-gradient(180deg, #030812 0%, #040a14 40%, #050d1a 100%);
+    /* Create a rich, multi-layered canvas for the animation */
+    background: 
+        radial-gradient(circle at 15% 50%, rgba(0, 229, 255, 0.08), transparent 40%),
+        radial-gradient(circle at 85% 30%, rgba(188, 96, 211, 0.06), transparent 45%),
+        radial-gradient(circle at 50% 100%, rgba(10, 40, 80, 0.3), transparent 60%),
+        linear-gradient(135deg, #02050a 0%, #050d1a 50%, #030812 100%);
+    background-size: 200% 200%;
+    animation: homeBgShift 20s ease-in-out infinite alternate;
     padding: 0 40px 24px;
     height: 100vh;
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+@keyframes homeBgShift {
+    0% {
+        background-position: 0% 0%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 100%;
+    }
 }
 
 #view-home::-webkit-scrollbar {
