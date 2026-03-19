@@ -408,6 +408,72 @@ def _call_groq(history: list, stream: bool = False, model_override: str = ""):
                          stream=stream, timeout=60)
 
 
+# ─── Diagnostic endpoint (remove after debugging) ─────────────────────────────
+
+@app.route("/debug/test-providers")
+def debug_test_providers():
+    """Test Groq and Ollama Cloud API connectivity. Remove after debugging."""
+    results = {
+        "provider": nova_settings["provider"],
+        "groq_configured": _groq_configured(),
+        "ollama_cloud_configured": _ollama_cloud_configured(),
+        "groq_key_last4": nova_settings["groq_api_key"][-4:] if nova_settings["groq_api_key"] else "NONE",
+        "groq_model": nova_settings["groq_model"],
+        "live_mode": NOVA_LIVE_MODE,
+        "tests": {}
+    }
+
+    # Test Groq
+    if _groq_configured():
+        try:
+            test_history = [{"role": "user", "content": "Say hello in one word"}]
+            payload = {
+                "model": nova_settings["groq_model"],
+                "messages": test_history,
+                "temperature": 0.5,
+                "max_tokens": 10,
+                "stream": False,
+            }
+            headers = {
+                "Authorization": f"Bearer {nova_settings['groq_api_key']}",
+                "Content-Type": "application/json",
+            }
+            r = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=15)
+            results["tests"]["groq"] = {
+                "status_code": r.status_code,
+                "response": r.text[:500] if r.status_code != 200 else r.json().get("choices", [{}])[0].get("message", {}).get("content", "NO CONTENT"),
+                "ok": r.status_code == 200
+            }
+        except Exception as exc:
+            results["tests"]["groq"] = {"error": str(exc), "ok": False}
+    else:
+        results["tests"]["groq"] = {"error": "Not configured", "ok": False}
+
+    # Test Ollama Cloud
+    if _ollama_cloud_configured():
+        try:
+            cloud_url = nova_settings["ollama_cloud_url"] or "https://api.ollama.com/api/generate"
+            model = nova_settings.get("hybrid_ollama_model") or nova_settings["model"] or "mistral"
+            payload = {"model": model, "prompt": "Say hello", "stream": False, "options": {"num_predict": 10}}
+            headers = {"Content-Type": "application/json"}
+            if nova_settings["ollama_api_key"]:
+                headers["Authorization"] = f"Bearer {nova_settings['ollama_api_key']}"
+            r = requests.post(cloud_url, json=payload, headers=headers, timeout=15)
+            results["tests"]["ollama_cloud"] = {
+                "status_code": r.status_code,
+                "response": r.text[:500] if r.status_code != 200 else r.json().get("response", "NO CONTENT")[:200],
+                "url": cloud_url,
+                "model": model,
+                "ok": r.status_code == 200
+            }
+        except Exception as exc:
+            results["tests"]["ollama_cloud"] = {"error": str(exc), "ok": False}
+    else:
+        results["tests"]["ollama_cloud"] = {"error": "Not configured", "ok": False}
+
+    return jsonify(results)
+
+
 # ─── Auth Routes ─────────────────────────────────────────────────────────────
 
 @app.route("/auth/register", methods=["POST"])
