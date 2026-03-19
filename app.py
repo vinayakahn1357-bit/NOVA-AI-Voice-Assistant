@@ -971,33 +971,39 @@ def chat_stream():
                                             except json.JSONDecodeError:
                                                 continue
                                         used_provider = "ollama_cloud"
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                print(f"[NOVA] Hybrid fallback Ollama Cloud failed: {exc}")
                         elif sub == "ollama_cloud" and _groq_configured():
                             # Ollama Cloud failed/absent → try Groq
+                            print(f"[NOVA] Hybrid fallback: Groq configured={_groq_configured()}, attempting Groq stream")
                             try:
                                 with _call_groq(history, stream=True) as r:
-                                    for line in r.iter_lines():
-                                        if not line:
-                                            continue
-                                        line_str = line.decode("utf-8", errors="ignore")
-                                        if not line_str.startswith("data: "):
-                                            continue
-                                        data_str = line_str[6:]
-                                        if data_str.strip() == "[DONE]":
-                                            break
-                                        try:
-                                            chunk = json.loads(data_str)
-                                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                            token = delta.get("content", "")
-                                            if token:
-                                                full_reply.append(token)
-                                                yield f"data: {json.dumps({'token': token})}\n\n"
-                                        except (json.JSONDecodeError, IndexError, KeyError):
-                                            continue
-                                    used_provider = "groq"
-                            except Exception:
-                                pass
+                                    print(f"[NOVA] Hybrid fallback Groq response status: {r.status_code}")
+                                    if r.status_code != 200:
+                                        print(f"[NOVA] Hybrid fallback Groq error body: {r.text[:300]}")
+                                    else:
+                                        for line in r.iter_lines():
+                                            if not line:
+                                                continue
+                                            line_str = line.decode("utf-8", errors="ignore")
+                                            if not line_str.startswith("data: "):
+                                                continue
+                                            data_str = line_str[6:]
+                                            if data_str.strip() == "[DONE]":
+                                                break
+                                            try:
+                                                chunk = json.loads(data_str)
+                                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                                token = delta.get("content", "")
+                                                if token:
+                                                    full_reply.append(token)
+                                                    yield f"data: {json.dumps({'token': token})}\n\n"
+                                            except (json.JSONDecodeError, IndexError, KeyError):
+                                                continue
+                                        used_provider = "groq"
+                                        print(f"[NOVA] Hybrid fallback Groq streamed {len(full_reply)} tokens")
+                            except Exception as exc:
+                                print(f"[NOVA] Hybrid fallback Groq EXCEPTION: {exc}")
                         elif not NOVA_LIVE_MODE:
                             # Last resort: Ollama local
                             local_payload = {
