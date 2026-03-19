@@ -381,7 +381,7 @@ def _call_ollama_cloud(full_prompt: str, stream: bool = False):
     if nova_settings["ollama_api_key"]:
         headers["Authorization"] = f"Bearer {nova_settings['ollama_api_key']}"
     return requests.post(cloud_url, json=payload, headers=headers,
-                         stream=stream, timeout=120)
+                         stream=stream, timeout=15)
 
 
 def _call_groq(history: list, stream: bool = False, model_override: str = ""):
