@@ -64,8 +64,13 @@ function toggleChatSidebar() {
 
 // ─── App State ───────────────────────────────────────────────────────────────
 let inputMode = 'text';       // 'text' | 'voice'
-let isStreamMode = true;      // use SSE streaming by default
+// Auto-detect Vercel deployment — Vercel's Python WSGI runtime buffers SSE
+// streams, so we use non-streaming /chat endpoint on Vercel for reliability.
+const _isVercelDeploy = window.location.hostname.includes('.vercel.app')
+    || window.location.hostname.includes('novaarcai.com');
+let isStreamMode = !_isVercelDeploy; // SSE streaming only on localhost
 let isGenerating = false;     // true while waiting for / receiving a response
+if (_isVercelDeploy) console.log('[NOVA] Vercel detected — using non-streaming mode for reliability');
 
 // ─── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -582,6 +587,25 @@ async function sendVoiceMessage(message) {
 
     setSendState(true);
     const typingDiv = createThinkingBubble(chatBox);
+
+    // On Vercel, SSE streaming doesn't work — use non-streaming /chat endpoint
+    if (_isVercelDeploy) {
+        try {
+            const replyText = await sendFull(message, typingDiv, chatBox);
+            if (replyText) {
+                saveToHistory(message, replyText);
+                speak(replyText);
+            }
+        } catch (err) {
+            if (typingDiv.parentNode) typingDiv.remove();
+            appendErrorBubble(chatBox, err.message);
+        } finally {
+            setSendState(false);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+        return;
+    }
+
     let bodyEl = null;
 
     try {
