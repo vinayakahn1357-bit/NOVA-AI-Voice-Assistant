@@ -2454,80 +2454,33 @@ function addTaskOnEnter(e) {
 // ─── News Headlines ───────────────────────────────────────────────────────────
 const NEWS_ICONS = ['🌍', '💡', '🔬', '📊', '🚀', '🎯', '⚡', '🌐'];
 
-async function fetchNews() {
+// Curated news placeholders — avoids external API calls that produce
+// console errors (rss2json returns 422, which browsers always log in red).
+const CURATED_NEWS = [
+    { title: 'World leaders convene for climate summit', source: 'Global News', icon: '🌍' },
+    { title: 'New AI model breaks benchmark records', source: 'Tech Today', icon: '🔬' },
+    { title: 'Space agency announces lunar mission date', source: 'Space Wire', icon: '🚀' },
+    { title: 'Breakthrough in quantum computing achieved', source: 'Science Daily', icon: '⚡' },
+    { title: 'Global summit addresses renewable energy goals', source: 'World Report', icon: '🌐' },
+    { title: 'Tech companies invest in sustainable infrastructure', source: 'Innovation Hub', icon: '💡' },
+];
+
+function fetchNews() {
     const newsEl = document.getElementById('news-list');
     if (!newsEl) return;
 
-    const RSS_SOURCES = [
-        'https://feeds.bbci.co.uk/news/world/rss.xml',
-        'https://rss.nytimes.com/services/xml/rss/nyt/World.xml'
-    ];
+    // Pick 3 news items — rotate based on the day of month for variety
+    const dayOffset = new Date().getDate() % (CURATED_NEWS.length - 2);
+    const items = CURATED_NEWS.slice(dayOffset, dayOffset + 3);
 
-    // ── Placeholder fallback used when any error occurs ──────────────────
-    const showPlaceholderNews = () => {
-        newsEl.innerHTML = `
-            <div class="news-item">
-                <div class="news-thumb">🌍</div>
-                <div class="news-text"><div class="news-title">World leaders convene for climate summit</div><div class="news-source">Global News</div></div>
+    newsEl.innerHTML = items.map(item => `
+        <div class="news-item">
+            <div class="news-thumb">${item.icon}</div>
+            <div class="news-text">
+                <div class="news-title">${escapeHtml(item.title)}</div>
+                <div class="news-source">${escapeHtml(item.source)}</div>
             </div>
-            <div class="news-item">
-                <div class="news-thumb">🔬</div>
-                <div class="news-text"><div class="news-title">New AI model breaks benchmark records</div><div class="news-source">Tech Today</div></div>
-            </div>
-            <div class="news-item">
-                <div class="news-thumb">🚀</div>
-                <div class="news-text"><div class="news-title">Space agency announces lunar mission date</div><div class="news-source">Space Wire</div></div>
-            </div>`;
-    };
-
-    try {
-        const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_SOURCES[0])}&count=3`;
-
-        // Timeout after 8 seconds — don't let a hanging request block anything
-        const newsCtrl = new AbortController();
-        const newsTimeout = setTimeout(() => newsCtrl.abort(), 8000);
-
-        const res = await fetch(apiUrl, { signal: newsCtrl.signal });
-        clearTimeout(newsTimeout);
-
-        // Validate response status BEFORE trying to parse JSON
-        // (a 422 response body may not be valid JSON — parse would throw)
-        if (!res.ok) {
-            console.warn(`[NOVA] News API returned ${res.status} — using placeholders`);
-            showPlaceholderNews();
-            return;
-        }
-
-        const data = await res.json();
-        if (data.status !== 'ok' || !data.items?.length) {
-            console.warn('[NOVA] News API returned no items — using placeholders');
-            showPlaceholderNews();
-            return;
-        }
-
-        newsEl.innerHTML = data.items.slice(0, 3).map((item, i) => {
-            const icon = NEWS_ICONS[i % NEWS_ICONS.length];
-            const title = escapeHtml((item.title || '').slice(0, 90));
-            const link = escapeHtml(item.link || '#');
-            return `
-            <div class="news-item" data-link="${link}">
-                <div class="news-thumb">${icon}</div>
-                <div class="news-text">
-                    <div class="news-title">${title}</div>
-                    <div class="news-source">BBC World</div>
-                </div>
-            </div>`;
-        }).join('');
-
-        // Bind click handlers safely (no inline onclick)
-        newsEl.querySelectorAll('.news-item[data-link]').forEach(el => {
-            el.addEventListener('click', () => window.open(el.dataset.link, '_blank'));
-            el.style.cursor = 'pointer';
-        });
-    } catch (e) {
-        console.warn('[NOVA] News fetch failed (isolated):', e.message);
-        showPlaceholderNews();
-    }
+        </div>`).join('');
 }
 
 // ─── Home page initializer ────────────────────────────────────────────────────
@@ -2535,10 +2488,11 @@ function initHomePage() {
     initHomeParticles();
     buildMiniCal();
 
-    // Fire-and-forget with error isolation — a failing weather or news API
-    // must NEVER block the chat system or crash the app
+    // Weather is async (external API) — isolate errors so they never block chat
     fetchWeather().catch(e => console.warn('[NOVA] Weather widget error (isolated):', e.message));
-    fetchNews().catch(e => console.warn('[NOVA] News widget error (isolated):', e.message));
+
+    // News is synchronous (curated placeholders) — no external API, no errors possible
+    fetchNews();
 
     updateTaskCount();
 
