@@ -560,14 +560,18 @@ async function sendMessage() {
     setSendState(true);
     const typingDiv = createThinkingBubble(chatBox);
 
+    console.log(`[NOVA sendMessage] isStreamMode=${isStreamMode}, _isVercelDeploy=${_isVercelDeploy}, mode=${isStreamMode ? 'STREAM' : 'FULL'}`);
+
     try {
         const replyText = isStreamMode
             ? await sendStream(message, typingDiv, chatBox)
             : await sendFull(message, typingDiv, chatBox);
 
+        console.log('[NOVA sendMessage] Got reply:', replyText ? replyText.slice(0, 100) : '(empty)');
         if (replyText) saveToHistory(message, replyText);
     } catch (err) {
-        typingDiv.remove();
+        console.error('[NOVA sendMessage] CAUGHT ERROR:', err);
+        if (typingDiv.parentNode) typingDiv.remove();
         appendErrorBubble(chatBox, err.message);
     } finally {
         setSendState(false);
@@ -649,6 +653,9 @@ async function sendVoiceMessage(message) {
 // ─── Full (non-streaming) fetch ───────────────────────────────────────────────
 async function sendFull(message, typingDiv, chatBox) {
     abortController = new AbortController();
+    const t0 = performance.now();
+    console.log('[NOVA sendFull] Sending to /chat:', message.slice(0, 80));
+
     const response = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
@@ -656,15 +663,27 @@ async function sendFull(message, typingDiv, chatBox) {
         signal: abortController.signal,
     });
 
+    const elapsed = Math.round(performance.now() - t0);
+    console.log(`[NOVA sendFull] Response status: ${response.status} (${elapsed}ms)`);
+
     let replyText = "I'm having a moment — please try again.";
     if (response.ok) {
         const data = await response.json();
+        console.log('[NOVA sendFull] Response data:', JSON.stringify(data).slice(0, 300));
         replyText = data.reply || replyText;
         updateModelBadge(data.model);
     } else {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Error ${response.status}`);
+        let errBody = '';
+        try {
+            errBody = await response.text();
+            console.error('[NOVA sendFull] Error response body:', errBody.slice(0, 500));
+        } catch (_) {}
+        let errData = {};
+        try { errData = JSON.parse(errBody); } catch (_) {}
+        throw new Error(errData.error || `Error ${response.status}: ${errBody.slice(0, 200)}`);
     }
+
+    console.log('[NOVA sendFull] Reply text length:', replyText.length, '| Preview:', replyText.slice(0, 100));
 
     typingDiv.remove();
     const bodyEl = appendNovaBubble(chatBox);
