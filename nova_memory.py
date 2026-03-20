@@ -24,10 +24,11 @@ from datetime import date
 if os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV"):
     DB_FILE      = "/tmp/nova_memory.db"
     LEGACY_JSON  = "/tmp/nova_memory.json"
+    OLLAMA_URL   = None  # No local Ollama on Vercel
 else:
     DB_FILE      = os.path.join(os.path.dirname(__file__), "nova_memory.db")
     LEGACY_JSON  = os.path.join(os.path.dirname(__file__), "nova_memory.json")
-OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+    OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 _DDL = """
@@ -322,19 +323,20 @@ class NovaMemory:
             except Exception as e:
                 print(f"[NOVA Memory] Ollama Cloud extraction failed: {e}")
 
-        # ── Fallback to local Ollama ──────────────────────────────────
-        try:
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": temperature, "num_predict": max_tokens},
-            }
-            r = requests.post(OLLAMA_URL, json=payload, timeout=30)
-            if r.status_code == 200:
-                return r.json().get("response", "").strip()
-        except Exception as e:
-            print(f"[NOVA Memory] Local Ollama extraction failed: {e}")
+        # ── Fallback to local Ollama (skip on Vercel where OLLAMA_URL is None) ─
+        if OLLAMA_URL:
+            try:
+                payload = {
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                }
+                r = requests.post(OLLAMA_URL, json=payload, timeout=30)
+                if r.status_code == 200:
+                    return r.json().get("response", "").strip()
+            except Exception as e:
+                print(f"[NOVA Memory] Local Ollama extraction failed: {e}")
 
         return ""
 

@@ -311,7 +311,11 @@ def append_message(session_id: str, role: str, content: str):
 def build_prompt(history: list) -> str:
     """Build the full prompt string from history for Ollama, injecting memory."""
     base_prompt = nova_settings["system_prompt"].strip()
-    memory_ctx = memory.get_memory_context()
+    try:
+        memory_ctx = memory.get_memory_context()
+    except Exception as exc:
+        print(f"[NOVA] Memory context failed (ignored): {exc}")
+        memory_ctx = ""
     lines = [base_prompt + memory_ctx]
     for msg in history:
         role = "User" if msg["role"] == "user" else "Nova"
@@ -322,7 +326,11 @@ def build_prompt(history: list) -> str:
 
 def build_groq_messages(history: list) -> list:
     """Build OpenAI-format messages list for Groq API."""
-    memory_ctx = memory.get_memory_context()
+    try:
+        memory_ctx = memory.get_memory_context()
+    except Exception as exc:
+        print(f"[NOVA] Memory context failed (ignored): {exc}")
+        memory_ctx = ""
     system_msg = nova_settings["system_prompt"].strip() + memory_ctx
     messages = [{"role": "system", "content": system_msg}]
     for msg in history:
@@ -1116,32 +1124,44 @@ def chat_stream():
                         "Content-Type": "application/json",
                     }
                     _groq_timeout = 8 if NOVA_ENV == "production" else 30
+                    print(f"[NOVA] Groq stream: model={nova_settings['groq_model']}, timeout={_groq_timeout}")
                     with requests.post(GROQ_API_URL, json=groq_payload,
                                        headers=groq_headers, stream=True, timeout=_groq_timeout) as r:
-                        for line in r.iter_lines():
-                            if not line:
-                                continue
-                            line_str = line.decode("utf-8", errors="ignore")
-                            if not line_str.startswith("data: "):
-                                continue
-                            data_str = line_str[6:]
-                            if data_str.strip() == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                token = delta.get("content", "")
-                                if token:
-                                    full_reply.append(token)
-                                    yield f"data: {json.dumps({'token': token})}\n\n"
-                            except (json.JSONDecodeError, IndexError, KeyError):
-                                continue
+                        print(f"[NOVA] Groq stream response status: {r.status_code}")
+                        if r.status_code != 200:
+                            err_body = r.text[:300]
+                            print(f"[NOVA] Groq stream ERROR: {err_body}")
+                            err_msg = json.dumps({"error": f"Groq API error ({r.status_code})"})
+                            yield f"data: {err_msg}\n\n"
+                        else:
+                            for line in r.iter_lines():
+                                if not line:
+                                    continue
+                                line_str = line.decode("utf-8", errors="ignore")
+                                if not line_str.startswith("data: "):
+                                    continue
+                                data_str = line_str[6:]
+                                if data_str.strip() == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data_str)
+                                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                    token = delta.get("content", "")
+                                    if token:
+                                        full_reply.append(token)
+                                        yield f"data: {json.dumps({'token': token})}\n\n"
+                                except (json.JSONDecodeError, IndexError, KeyError):
+                                    continue
                     complete_reply = "".join(full_reply).strip()
+                    print(f"[NOVA] Groq stream complete: {len(full_reply)} tokens, {len(complete_reply)} chars")
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
                         _safe_memory(memory.record_conversation)
                         _safe_memory(memory.extract_and_store,
                                        user_message, complete_reply, active_model, _build_provider_config())
+                    elif not complete_reply:
+                        err_msg = json.dumps({"error": "AI returned an empty response. Please try again."})
+                        yield f"data: {err_msg}\n\n"
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
                 elif use_ollama_cloud:
