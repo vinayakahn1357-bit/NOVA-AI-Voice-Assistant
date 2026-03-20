@@ -175,16 +175,27 @@ DEFAULT_SYSTEM_PROMPT = (
     "reference their interests, and adapt to their preferences.\n"
 )
 
-OLLAMA_URL  = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-# MAX_HISTORY is defined below with the SQLite session helper
+# ─── Environment Detection ────────────────────────────────────────────────────
+# ENV='production' on Vercel/cloud, 'local' for dev.  Backward-compat with NOVA_LIVE_MODE.
+_live_flag = os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes")
+_vercel_flag = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+NOVA_ENV = os.getenv("ENV", "production" if (_live_flag or _vercel_flag) else "local")
+NOVA_LIVE_MODE = (NOVA_ENV == "production")   # backward compat for existing code
+
+# Ollama URL — NEVER localhost in production
+if NOVA_ENV == "local":
+    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+else:
+    OLLAMA_URL = os.getenv("OLLAMA_API_URL",
+                           os.getenv("OLLAMA_CLOUD_URL", "https://api.ollama.com/api/generate"))
+
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# ─── Live Mode — when True, Ollama Local is completely disabled ───────────────
-# Set NOVA_LIVE_MODE=true in .env when deploying to a cloud/live server.
-# In this mode, only Ollama Cloud and Groq Cloud are available as providers.
-NOVA_LIVE_MODE = os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes")
-if NOVA_LIVE_MODE:
-    print("[NOVA] Live Mode ENABLED — Ollama Local is disabled. Only cloud providers are active.")
+# ─── Startup Logging ──────────────────────────────────────────────────────────
+print(f"[NOVA] ENV: {NOVA_ENV}")
+print(f"[NOVA] Using Ollama: {OLLAMA_URL}")
+if NOVA_ENV == "production":
+    print("[NOVA] Production mode — Ollama Local DISABLED, only cloud providers active.")
 
 # ─── Global Settings (can be changed via /settings) ──────────────────────────
 _default_provider = os.getenv("NOVA_PROVIDER", "ollama")
@@ -380,8 +391,9 @@ def _call_ollama_cloud(full_prompt: str, stream: bool = False):
     headers = {"Content-Type": "application/json"}
     if nova_settings["ollama_api_key"]:
         headers["Authorization"] = f"Bearer {nova_settings['ollama_api_key']}"
+    _timeout = 8 if NOVA_ENV == "production" else 30
     return requests.post(cloud_url, json=payload, headers=headers,
-                         stream=stream, timeout=15)
+                         stream=stream, timeout=_timeout)
 
 
 def _call_groq(history: list, stream: bool = False, model_override: str = ""):
@@ -404,74 +416,39 @@ def _call_groq(history: list, stream: bool = False, model_override: str = ""):
         "Authorization": f"Bearer {nova_settings['groq_api_key']}",
         "Content-Type": "application/json",
     }
+    _timeout = 8 if NOVA_ENV == "production" else 30
     return requests.post(GROQ_API_URL, json=payload, headers=headers,
-                         stream=stream, timeout=60)
+                         stream=stream, timeout=_timeout)
 
 
-# ─── Diagnostic endpoint (remove after debugging) ─────────────────────────────
-
-@app.route("/debug/test-providers")
-def debug_test_providers():
-    """Test Groq and Ollama Cloud API connectivity. Remove after debugging."""
-    results = {
-        "provider": nova_settings["provider"],
-        "groq_configured": _groq_configured(),
-        "ollama_cloud_configured": _ollama_cloud_configured(),
-        "groq_key_last4": nova_settings["groq_api_key"][-4:] if nova_settings["groq_api_key"] else "NONE",
-        "groq_model": nova_settings["groq_model"],
-        "live_mode": NOVA_LIVE_MODE,
-        "tests": {}
+# ─── Local Ollama Helper (only for ENV=local) ─────────────────────────────────
+def _call_ollama_local(full_prompt: str, stream: bool = False):
+    """Call local Ollama. Only allowed in local ENV. Returns requests.Response."""
+    if NOVA_ENV != "local":
+        raise ConnectionError("[NOVA] Ollama local is disabled in production")
+    payload = {
+        "model": nova_settings["model"],
+        "prompt": full_prompt,
+        "stream": stream,
+        "options": {
+            "temperature":    nova_settings["temperature"],
+            "top_p":          nova_settings["top_p"],
+            "num_predict":    nova_settings["num_predict"],
+            "num_ctx":        2048,
+            "num_thread":     CPU_CORES_PHYSICAL,
+            "repeat_penalty": 1.1,
+        }
     }
+    return requests.post(OLLAMA_URL, json=payload, stream=stream, timeout=120)
 
-    # Test Groq
-    if _groq_configured():
-        try:
-            test_history = [{"role": "user", "content": "Say hello in one word"}]
-            payload = {
-                "model": nova_settings["groq_model"],
-                "messages": test_history,
-                "temperature": 0.5,
-                "max_tokens": 10,
-                "stream": False,
-            }
-            headers = {
-                "Authorization": f"Bearer {nova_settings['groq_api_key']}",
-                "Content-Type": "application/json",
-            }
-            r = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=15)
-            results["tests"]["groq"] = {
-                "status_code": r.status_code,
-                "response": r.text[:500] if r.status_code != 200 else r.json().get("choices", [{}])[0].get("message", {}).get("content", "NO CONTENT"),
-                "ok": r.status_code == 200
-            }
-        except Exception as exc:
-            results["tests"]["groq"] = {"error": str(exc), "ok": False}
-    else:
-        results["tests"]["groq"] = {"error": "Not configured", "ok": False}
 
-    # Test Ollama Cloud
-    if _ollama_cloud_configured():
-        try:
-            cloud_url = nova_settings["ollama_cloud_url"] or "https://api.ollama.com/api/generate"
-            model = nova_settings.get("hybrid_ollama_model") or nova_settings["model"] or "mistral"
-            payload = {"model": model, "prompt": "Say hello", "stream": False, "options": {"num_predict": 10}}
-            headers = {"Content-Type": "application/json"}
-            if nova_settings["ollama_api_key"]:
-                headers["Authorization"] = f"Bearer {nova_settings['ollama_api_key']}"
-            r = requests.post(cloud_url, json=payload, headers=headers, timeout=15)
-            results["tests"]["ollama_cloud"] = {
-                "status_code": r.status_code,
-                "response": r.text[:500] if r.status_code != 200 else r.json().get("response", "NO CONTENT")[:200],
-                "url": cloud_url,
-                "model": model,
-                "ok": r.status_code == 200
-            }
-        except Exception as exc:
-            results["tests"]["ollama_cloud"] = {"error": str(exc), "ok": False}
-    else:
-        results["tests"]["ollama_cloud"] = {"error": "Not configured", "ok": False}
+def _safe_memory(fn, *args):
+    """Submit a memory task to the background pool. Never crashes."""
+    try:
+        bg_pool.submit(fn, *args)
+    except Exception as exc:
+        print(f"[NOVA] Memory task failed (ignored): {exc}")
 
-    return jsonify(results)
 
 
 # ─── Auth Routes ─────────────────────────────────────────────────────────────
@@ -565,26 +542,32 @@ def _get_base_url() -> str:
     """
     Build the canonical base URL for OAuth redirect URIs.
 
-    Priority order:
-      1. NOVA_BASE_URL  env var  (always set this on Vercel / production)
-      2. X-Forwarded-Proto header  (Vercel proxy sets this to 'https')
-      3. request.host_url  (only reliable on localhost)
+    On localhost: always returns http://localhost:<port> (ignores NOVA_BASE_URL)
+    On production: uses NOVA_BASE_URL or X-Forwarded-Proto headers
     """
-    # 1. Explicit override — most reliable for production
+    # Detect localhost from the actual request — most reliable check
+    host = request.host or ""  # e.g. "localhost:5000" or "nova-ai...vercel.app"
+    is_local = host.startswith("localhost") or host.startswith("127.0.0.1")
+
+    if is_local:
+        # Always use the real local URL for OAuth on localhost
+        return request.host_url.rstrip("/")
+
+    # Production: explicit override from env var
     base = os.getenv("NOVA_BASE_URL", "").rstrip("/")
     if base:
         return base
 
-    # 2. Detect scheme from Vercel / proxy headers
+    # Detect scheme from Vercel / proxy headers
     proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip()
-    host  = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
-    if not host:
-        host = request.host  # fallback to Flask's detected host
+    fwd_host = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
+    if not fwd_host:
+        fwd_host = host
 
     if proto in ("https", "http"):
-        return f"{proto}://{host}"
+        return f"{proto}://{fwd_host}"
 
-    # 3. Last resort — works fine on localhost
+    # Last resort
     return request.host_url.rstrip("/")
 
 
@@ -820,15 +803,22 @@ def chat():
                         actual_sub  = "groq"
 
             else:  # _ollama_local
-                payload = {
-                    "model": nova_settings["model"], "prompt": full_prompt, "stream": False,
-                    "options": {"temperature": nova_settings["temperature"], "top_p": nova_settings["top_p"],
-                                "num_predict": nova_settings["num_predict"], "num_ctx": 2048,
-                                "num_thread": CPU_CORES_PHYSICAL, "repeat_penalty": 1.1}
-                }
-                r = requests.post(OLLAMA_URL, json=payload, timeout=120)
-                if r.status_code == 200:
-                    ai_response = r.json().get("response", "").strip()
+                try:
+                    r = _call_ollama_local(full_prompt)
+                    if r.status_code == 200:
+                        ai_response = r.json().get("response", "").strip()
+                except Exception as exc:
+                    print(f"[NOVA] Hybrid local Ollama failed: {exc}")
+                # Fallback to Groq if local Ollama failed
+                if not ai_response and _groq_configured():
+                    print("[NOVA] Fallback to Groq (local Ollama failed)")
+                    try:
+                        r = _call_groq(history)
+                        if r.status_code == 200:
+                            ai_response = r.json()["choices"][0]["message"]["content"].strip()
+                            actual_sub = "groq"
+                    except Exception as exc2:
+                        print(f"[NOVA] Groq fallback also failed: {exc2}")
 
             if actual_sub == "groq":
                 active_model = nova_settings["hybrid_groq_model"] or nova_settings["groq_model"]
@@ -856,24 +846,28 @@ def chat():
 
         else:
             # Ollama Local API (default / last resort)
-            payload = {
-                "model": nova_settings["model"],
-                "prompt": full_prompt,
-                "stream": False,
-                "options": {
-                    "temperature":    nova_settings["temperature"],
-                    "top_p":          nova_settings["top_p"],
-                    "num_predict":    nova_settings["num_predict"],
-                    "num_ctx":        2048,
-                    "num_thread":     CPU_CORES_PHYSICAL,
-                    "repeat_penalty": 1.1,
-                }
-            }
-            response = requests.post(OLLAMA_URL, json=payload, timeout=120)
-            if response.status_code != 200:
-                return jsonify({"error": "AI engine error", "code": "OLLAMA_ERROR"}), 500
-            ai_response = response.json().get("response", "").strip()
-            active_model = nova_settings["model"]
+            ai_response = ""
+            try:
+                r = _call_ollama_local(full_prompt)
+                if r.status_code == 200:
+                    ai_response = r.json().get("response", "").strip()
+                else:
+                    print(f"[NOVA] Ollama local error ({r.status_code}), trying Groq fallback")
+            except Exception as exc:
+                print(f"[NOVA] Ollama local failed: {exc}")
+            # Auto-fallback to Groq
+            if not ai_response and _groq_configured():
+                print("[NOVA] Fallback to Groq")
+                try:
+                    r = _call_groq(history)
+                    if r.status_code == 200:
+                        ai_response = r.json()["choices"][0]["message"]["content"].strip()
+                        active_model = nova_settings["groq_model"]
+                except Exception as exc2:
+                    print(f"[NOVA] Groq fallback also failed: {exc2}")
+            if not ai_response:
+                return jsonify({"error": "AI engine error — all providers failed", "code": "ALL_PROVIDERS_FAILED"}), 503
+            active_model = active_model if ai_response else nova_settings["model"]
 
         if not ai_response:
             ai_response = "I'm not sure how to respond to that. Could you rephrase?"
@@ -882,8 +876,8 @@ def chat():
         append_message(session_id, "nova", ai_response)
 
         # ── Learning: offload to background thread pool (non-blocking) ───────
-        bg_pool.submit(memory.record_conversation)
-        bg_pool.submit(memory.extract_and_store, user_message, ai_response, active_model, _build_provider_config())
+        _safe_memory(memory.record_conversation)
+        _safe_memory(memory.extract_and_store, user_message, ai_response, active_model, _build_provider_config())
 
         return jsonify({
             "reply": ai_response,
@@ -1070,30 +1064,26 @@ def chat_stream():
                                         print(f"[NOVA] Hybrid fallback Groq streamed {len(full_reply)} tokens")
                             except Exception as exc:
                                 print(f"[NOVA] Hybrid fallback Groq EXCEPTION: {exc}")
-                        elif not NOVA_LIVE_MODE:
-                            # Last resort: Ollama local
-                            local_payload = {
-                                "model": nova_settings["model"], "prompt": full_prompt, "stream": True,
-                                "options": {"temperature": nova_settings["temperature"],
-                                            "top_p": nova_settings["top_p"],
-                                            "num_predict": nova_settings["num_predict"],
-                                            "num_ctx": 2048, "num_thread": CPU_CORES_PHYSICAL}
-                            }
-                            with requests.post(OLLAMA_URL, json=local_payload, stream=True, timeout=120) as r:
-                                for line in r.iter_lines():
-                                    if not line:
-                                        continue
-                                    try:
-                                        chunk = json.loads(line)
-                                        token = chunk.get("response", "")
-                                        if token:
-                                            full_reply.append(token)
-                                            yield f"data: {json.dumps({'token': token})}\n\n"
-                                        if chunk.get("done"):
-                                            break
-                                    except json.JSONDecodeError:
-                                        continue
-                            used_provider = "_ollama_local"
+                        elif NOVA_ENV == "local":
+                            # Last resort: Ollama local (only in local ENV)
+                            try:
+                                with _call_ollama_local(full_prompt, stream=True) as r:
+                                    for line in r.iter_lines():
+                                        if not line:
+                                            continue
+                                        try:
+                                            chunk = json.loads(line)
+                                            token = chunk.get("response", "")
+                                            if token:
+                                                full_reply.append(token)
+                                                yield f"data: {json.dumps({'token': token})}\n\n"
+                                            if chunk.get("done"):
+                                                break
+                                        except json.JSONDecodeError:
+                                            continue
+                                used_provider = "_ollama_local"
+                            except Exception as exc:
+                                print(f"[NOVA] Hybrid fallback local Ollama EXCEPTION: {exc}")
 
                     # ── Set active_model based on which sub actually answered ─
                     if used_provider == "groq":
@@ -1106,8 +1096,8 @@ def chat_stream():
                     complete_reply = "".join(full_reply).strip()
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
-                        bg_pool.submit(memory.record_conversation)
-                        bg_pool.submit(memory.extract_and_store, user_message, complete_reply, active_model, _build_provider_config())
+                        _safe_memory(memory.record_conversation)
+                        _safe_memory(memory.extract_and_store, user_message, complete_reply, active_model, _build_provider_config())
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'model': active_model})}\n\n"
 
                 elif use_groq:
@@ -1125,8 +1115,9 @@ def chat_stream():
                         "Authorization": f"Bearer {nova_settings['groq_api_key']}",
                         "Content-Type": "application/json",
                     }
+                    _groq_timeout = 8 if NOVA_ENV == "production" else 30
                     with requests.post(GROQ_API_URL, json=groq_payload,
-                                       headers=groq_headers, stream=True, timeout=60) as r:
+                                       headers=groq_headers, stream=True, timeout=_groq_timeout) as r:
                         for line in r.iter_lines():
                             if not line:
                                 continue
@@ -1148,8 +1139,8 @@ def chat_stream():
                     complete_reply = "".join(full_reply).strip()
                     if complete_reply:
                         append_message(session_id, "nova", complete_reply)
-                        bg_pool.submit(memory.record_conversation)
-                        bg_pool.submit(memory.extract_and_store,
+                        _safe_memory(memory.record_conversation)
+                        _safe_memory(memory.extract_and_store,
                                        user_message, complete_reply, active_model, _build_provider_config())
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
@@ -1168,30 +1159,22 @@ def chat_stream():
                                 if chunk.get("done"):
                                     complete_reply = "".join(full_reply).strip()
                                     append_message(session_id, "nova", complete_reply)
-                                    bg_pool.submit(memory.record_conversation)
-                                    bg_pool.submit(memory.extract_and_store,
+                                    _safe_memory(memory.record_conversation)
+                                    _safe_memory(memory.extract_and_store,
                                                    user_message, complete_reply, active_model, _build_provider_config())
                                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                                     break
                             except json.JSONDecodeError:
                                 continue
 
+
                 else:
-                    # ─── Ollama Local streaming ──────────────────────────
-                    payload = {
-                        "model": nova_settings["model"],
-                        "prompt": full_prompt,
-                        "stream": True,
-                        "options": {
-                            "temperature":    nova_settings["temperature"],
-                            "top_p":          nova_settings["top_p"],
-                            "num_predict":    nova_settings["num_predict"],
-                            "num_ctx":        2048,
-                            "num_thread":     CPU_CORES_PHYSICAL,
-                            "repeat_penalty": 1.1,
-                        }
-                    }
-                    with requests.post(OLLAMA_URL, json=payload, stream=True, timeout=120) as r:
+                    # ─── Ollama Local streaming (only in local ENV) ────────
+                    if NOVA_ENV != "local":
+                        _no_provider_err = json.dumps({"error": "No AI provider available. Configure Groq or Ollama Cloud."})
+                        yield f"data: {_no_provider_err}\n\n"
+                        return
+                    with _call_ollama_local(full_prompt, stream=True) as r:
                         for line in r.iter_lines():
                             if not line:
                                 continue
@@ -1204,8 +1187,8 @@ def chat_stream():
                                 if chunk.get("done"):
                                     complete_reply = "".join(full_reply).strip()
                                     append_message(session_id, "nova", complete_reply)
-                                    bg_pool.submit(memory.record_conversation)
-                                    bg_pool.submit(memory.extract_and_store,
+                                    _safe_memory(memory.record_conversation)
+                                    _safe_memory(memory.extract_and_store,
                                                    user_message, complete_reply, active_model, _build_provider_config())
                                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                                     break
@@ -1340,7 +1323,7 @@ def reset_conversation():
         # Generate daily summary before resetting
         history = get_history(session_id)
         if history:
-            bg_pool.submit(memory.generate_daily_summary, history, nova_settings["model"], _build_provider_config())
+            _safe_memory(memory.generate_daily_summary, history, nova_settings["model"], _build_provider_config())
         _db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         _db.commit()
     else:
@@ -1378,14 +1361,15 @@ def list_models():
             pass
         # Fallback to common open models if endpoint doesn't expose /api/tags
         return jsonify({"models": ["mistral", "llama3", "gemma2", "phi3", "deepseek-r1"], "provider": "ollama_cloud"})
-    # Local Ollama
-    try:
-        r = requests.get("http://localhost:11434/api/tags", timeout=5)
-        if r.status_code == 200:
-            models = [m["name"] for m in r.json().get("models", [])]
-            return jsonify({"models": models, "provider": "ollama"})
-    except Exception:
-        pass
+    # Local Ollama (only in local ENV)
+    if NOVA_ENV == "local":
+        try:
+            r = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if r.status_code == 200:
+                models = [m["name"] for m in r.json().get("models", [])]
+                return jsonify({"models": models, "provider": "ollama"})
+        except Exception:
+            pass
     return jsonify({"models": ["mistral", "llama3", "gemma2", "phi3", "codellama"], "provider": "ollama"})
 
 

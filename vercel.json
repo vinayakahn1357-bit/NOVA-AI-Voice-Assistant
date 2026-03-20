@@ -11,13 +11,36 @@
   ],
   "routes": [
     {
+      "src": "/static/(.*)",
+      "dest": "app.py",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "src": "/chat",
+      "dest": "app.py",
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "src": "/chat/stream",
+      "dest": "app.py",
+      "headers": {
+        "Cache-Control": "no-store",
+        "X-Accel-Buffering": "no"
+      }
+    },
+    {
       "src": "/(.*)",
       "dest": "app.py"
     }
   ],
   "functions": {
     "app.py": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
 }
