@@ -2360,15 +2360,19 @@ async function fetchWeather() {
         // Use IP geolocation to get approximate location
         let lat = 12.97, lon = 77.59; // Default: Bangalore
         try {
-            const geoRes = await fetch('https://ipapi.co/json/');
+            const geoCtrl = AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined;
+            const geoRes = await fetch('https://ipapi.co/json/', { signal: geoCtrl });
             if (geoRes.ok) {
                 const geoData = await geoRes.json();
                 if (geoData.latitude) { lat = geoData.latitude; lon = geoData.longitude; }
             }
-        } catch (e) { /* use default */ }
+        } catch (e) { /* use default coords */ }
 
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weather_code&temperature_unit=celsius`;
-        const res = await fetch(url);
+        const weatherCtrl = new AbortController();
+        const weatherTimeout = setTimeout(() => weatherCtrl.abort(), 8000);
+        const res = await fetch(url, { signal: weatherCtrl.signal });
+        clearTimeout(weatherTimeout);
         if (!res.ok) throw new Error('weather API failed');
         const data = await res.json();
         const cur = data.current;
@@ -2380,7 +2384,8 @@ async function fetchWeather() {
         document.getElementById('weather-feel').textContent = `Feels ${Math.round(cur.apparent_temperature)}°C`;
         document.getElementById('weather-desc').textContent = desc;
     } catch (e) {
-        document.getElementById('weather-desc').textContent = 'Weather unavailable';
+        console.warn('[NOVA] Weather fetch failed (isolated):', e.message);
+        try { document.getElementById('weather-desc').textContent = 'Weather unavailable'; } catch (_) {}
     }
 }
 
@@ -2457,13 +2462,48 @@ async function fetchNews() {
         'https://feeds.bbci.co.uk/news/world/rss.xml',
         'https://rss.nytimes.com/services/xml/rss/nyt/World.xml'
     ];
-    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_SOURCES[0])}&count=3`;
+
+    // ── Placeholder fallback used when any error occurs ──────────────────
+    const showPlaceholderNews = () => {
+        newsEl.innerHTML = `
+            <div class="news-item">
+                <div class="news-thumb">🌍</div>
+                <div class="news-text"><div class="news-title">World leaders convene for climate summit</div><div class="news-source">Global News</div></div>
+            </div>
+            <div class="news-item">
+                <div class="news-thumb">🔬</div>
+                <div class="news-text"><div class="news-title">New AI model breaks benchmark records</div><div class="news-source">Tech Today</div></div>
+            </div>
+            <div class="news-item">
+                <div class="news-thumb">🚀</div>
+                <div class="news-text"><div class="news-title">Space agency announces lunar mission date</div><div class="news-source">Space Wire</div></div>
+            </div>`;
+    };
 
     try {
-        const res = await fetch(apiUrl);
-        if (!res.ok) throw new Error('News feed failed');
+        const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_SOURCES[0])}&count=3`;
+
+        // Timeout after 8 seconds — don't let a hanging request block anything
+        const newsCtrl = new AbortController();
+        const newsTimeout = setTimeout(() => newsCtrl.abort(), 8000);
+
+        const res = await fetch(apiUrl, { signal: newsCtrl.signal });
+        clearTimeout(newsTimeout);
+
+        // Validate response status BEFORE trying to parse JSON
+        // (a 422 response body may not be valid JSON — parse would throw)
+        if (!res.ok) {
+            console.warn(`[NOVA] News API returned ${res.status} — using placeholders`);
+            showPlaceholderNews();
+            return;
+        }
+
         const data = await res.json();
-        if (data.status !== 'ok' || !data.items?.length) throw new Error('No items');
+        if (data.status !== 'ok' || !data.items?.length) {
+            console.warn('[NOVA] News API returned no items — using placeholders');
+            showPlaceholderNews();
+            return;
+        }
 
         newsEl.innerHTML = data.items.slice(0, 3).map((item, i) => {
             const icon = NEWS_ICONS[i % NEWS_ICONS.length];
@@ -2485,19 +2525,8 @@ async function fetchNews() {
             el.style.cursor = 'pointer';
         });
     } catch (e) {
-        newsEl.innerHTML = `
-            <div class="news-item">
-                <div class="news-thumb">🌍</div>
-                <div class="news-text"><div class="news-title">World leaders convene for climate summit</div><div class="news-source">Global News</div></div>
-            </div>
-            <div class="news-item">
-                <div class="news-thumb">🔬</div>
-                <div class="news-text"><div class="news-title">New AI model breaks benchmark records</div><div class="news-source">Tech Today</div></div>
-            </div>
-            <div class="news-item">
-                <div class="news-thumb">🚀</div>
-                <div class="news-text"><div class="news-title">Space agency announces lunar mission date</div><div class="news-source">Space Wire</div></div>
-            </div>`;
+        console.warn('[NOVA] News fetch failed (isolated):', e.message);
+        showPlaceholderNews();
     }
 }
 
@@ -2505,8 +2534,12 @@ async function fetchNews() {
 function initHomePage() {
     initHomeParticles();
     buildMiniCal();
-    fetchWeather();
-    fetchNews();
+
+    // Fire-and-forget with error isolation — a failing weather or news API
+    // must NEVER block the chat system or crash the app
+    fetchWeather().catch(e => console.warn('[NOVA] Weather widget error (isolated):', e.message));
+    fetchNews().catch(e => console.warn('[NOVA] News widget error (isolated):', e.message));
+
     updateTaskCount();
 
     // Set greeting based on time of day
@@ -2524,6 +2557,14 @@ function initHomePage() {
 document.addEventListener('DOMContentLoaded', () => {
     initHomePage();
     showView('home');
+});
+
+// ─── Global Safety Net — catch any stray unhandled promise rejections ─────────
+// Ensures no async error (e.g. rss2json 422, weather timeout) can crash the app
+// or interfere with the chat system. Errors are logged for debugging only.
+window.addEventListener('unhandledrejection', (event) => {
+    console.warn('[NOVA] Caught unhandled rejection (isolated):', event.reason);
+    event.preventDefault(); // Suppress the default browser error
 });
 
 
