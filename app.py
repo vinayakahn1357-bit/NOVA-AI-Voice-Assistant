@@ -1165,27 +1165,85 @@ def chat_stream():
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
                 elif use_ollama_cloud:
-                    # ─── Ollama Cloud streaming ──────────────────────────
-                    with _call_ollama_cloud(full_prompt, stream=True) as r:
-                        for line in r.iter_lines():
-                            if not line:
-                                continue
-                            try:
-                                chunk = json.loads(line)
-                                token = chunk.get("response", "")
-                                if token:
-                                    full_reply.append(token)
-                                    yield f"data: {json.dumps({'token': token})}\n\n"
-                                if chunk.get("done"):
-                                    complete_reply = "".join(full_reply).strip()
-                                    append_message(session_id, "nova", complete_reply)
-                                    _safe_memory(memory.record_conversation)
-                                    _safe_memory(memory.extract_and_store,
-                                                   user_message, complete_reply, active_model, _build_provider_config())
-                                    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
-                                    break
-                            except json.JSONDecodeError:
-                                continue
+                    # ─── Ollama Cloud streaming (with Groq fallback) ─────
+                    ollama_cloud_ok = False
+                    try:
+                        print("[NOVA] Ollama Cloud stream starting...")
+                        with _call_ollama_cloud(full_prompt, stream=True) as r:
+                            print(f"[NOVA] Ollama Cloud stream status: {r.status_code}")
+                            if r.status_code == 200:
+                                for line in r.iter_lines():
+                                    if not line:
+                                        continue
+                                    try:
+                                        chunk = json.loads(line)
+                                        token = chunk.get("response", "")
+                                        if token:
+                                            full_reply.append(token)
+                                            yield f"data: {json.dumps({'token': token})}\n\n"
+                                        if chunk.get("done"):
+                                            ollama_cloud_ok = True
+                                            break
+                                    except json.JSONDecodeError:
+                                        continue
+                            else:
+                                print(f"[NOVA] Ollama Cloud error: {r.status_code} — {r.text[:200]}")
+                    except Exception as exc:
+                        print(f"[NOVA] Ollama Cloud stream EXCEPTION: {exc}")
+
+                    # If Ollama Cloud produced tokens, save and finish
+                    if ollama_cloud_ok and full_reply:
+                        complete_reply = "".join(full_reply).strip()
+                        if complete_reply:
+                            append_message(session_id, "nova", complete_reply)
+                            _safe_memory(memory.record_conversation)
+                            _safe_memory(memory.extract_and_store,
+                                           user_message, complete_reply, active_model, _build_provider_config())
+                        yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                    elif _groq_configured():
+                        # ── Fallback to Groq streaming ──────────────────
+                        print("[NOVA] Ollama Cloud failed → Groq stream fallback")
+                        try:
+                            with _call_groq(history, stream=True) as r:
+                                if r.status_code == 200:
+                                    for line in r.iter_lines():
+                                        if not line:
+                                            continue
+                                        line_str = line.decode("utf-8", errors="ignore")
+                                        if not line_str.startswith("data: "):
+                                            continue
+                                        data_str = line_str[6:]
+                                        if data_str.strip() == "[DONE]":
+                                            break
+                                        try:
+                                            chunk = json.loads(data_str)
+                                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                            token = delta.get("content", "")
+                                            if token:
+                                                full_reply.append(token)
+                                                yield f"data: {json.dumps({'token': token})}\n\n"
+                                        except (json.JSONDecodeError, IndexError, KeyError):
+                                            continue
+                                else:
+                                    print(f"[NOVA] Groq fallback stream error: {r.status_code}")
+                        except Exception as exc2:
+                            print(f"[NOVA] Groq fallback stream EXCEPTION: {exc2}")
+
+                        complete_reply = "".join(full_reply).strip()
+                        if complete_reply:
+                            active_model = nova_settings["groq_model"]
+                            append_message(session_id, "nova", complete_reply)
+                            _safe_memory(memory.record_conversation)
+                            _safe_memory(memory.extract_and_store,
+                                           user_message, complete_reply, active_model, _build_provider_config())
+                        else:
+                            err_msg = json.dumps({"error": "All AI providers failed. Please try again."})
+                            yield f"data: {err_msg}\n\n"
+                        yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                    else:
+                        err_msg = json.dumps({"error": "Ollama Cloud failed and no Groq fallback configured."})
+                        yield f"data: {err_msg}\n\n"
+                        yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
 
 
                 else:
