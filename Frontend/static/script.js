@@ -2471,10 +2471,7 @@ function addTaskOnEnter(e) {
 }
 
 // ─── News Headlines ───────────────────────────────────────────────────────────
-const NEWS_ICONS = ['🌍', '💡', '🔬', '📊', '🚀', '🎯', '⚡', '🌐'];
-
-// Curated news placeholders — avoids external API calls that produce
-// console errors (rss2json returns 422, which browsers always log in red).
+// Curated news placeholders — no external API calls, zero console errors.
 const CURATED_NEWS = [
     { title: 'World leaders convene for climate summit', source: 'Global News', icon: '🌍' },
     { title: 'New AI model breaks benchmark records', source: 'Tech Today', icon: '🔬' },
@@ -2533,8 +2530,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ─── Global Safety Net — catch any stray unhandled promise rejections ─────────
-// Ensures no async error (e.g. rss2json 422, weather timeout) can crash the app
-// or interfere with the chat system. Errors are logged for debugging only.
+// Prevents async errors (e.g. weather timeout) from crashing the app
+// or interfering with the chat system. Errors are logged for debugging only.
 window.addEventListener('unhandledrejection', (event) => {
     console.warn('[NOVA] Caught unhandled rejection (isolated):', event.reason);
     event.preventDefault(); // Suppress the default browser error
