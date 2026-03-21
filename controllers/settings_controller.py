@@ -1,7 +1,8 @@
 """
 controllers/settings_controller.py - Settings Management for NOVA
-Handles GET/POST settings and model listing with RBAC enforcement.
-Admin users see full config; normal users see filtered, safe config.
+Handles GET/POST settings and model listing with strict RBAC enforcement.
+Admin users see full config (keys masked); normal users see ONLY safe fields.
+API keys are NEVER sent to the frontend — only has_*_key booleans.
 """
 
 import requests
@@ -12,61 +13,57 @@ from utils.logger import get_logger
 log = get_logger("settings")
 
 
-def _mask(key):
-    """Mask an API key, showing only the last 4 chars."""
-    return ("****" + key[-4:]) if key else ""
-
-
-# --- Fields visible to each role ---
-
-# Sensitive fields that only admins can see/edit
-_ADMIN_ONLY_FIELDS = {
-    "groq_api_key", "ollama_api_key",
-    "ollama_cloud_url",
+# --- Sensitive fields that only admins can view/edit ---
+_ADMIN_ONLY_VIEW = {
+    "ollama_cloud_url", "provider",
 }
 
-# Fields that normal users can update
-_USER_EDITABLE_FIELDS = {
-    "model", "temperature", "top_p", "num_predict",
-    "system_prompt", "groq_model",
-    "hybrid_ollama_model", "hybrid_groq_model",
+_ADMIN_ONLY_EDIT = {
+    "groq_api_key", "ollama_api_key",
+    "ollama_cloud_url", "provider",
 }
 
 
 def get_current_settings(role="user"):
     """
     Return settings filtered by role.
-    Admin: full config with masked keys
-    User: safe subset (no API keys, no URLs)
+    Admin: full config with presence flags for keys (never actual keys)
+    User: safe subset only
     """
     settings = get_settings()
 
+    log.info("Settings GET: role=%s", role)
+
     if role == "admin":
         return {
+            # Model config
             "model":                settings["model"],
             "temperature":          settings["temperature"],
             "top_p":                settings["top_p"],
             "num_predict":          settings["num_predict"],
             "system_prompt":        settings["system_prompt"],
+            # Provider config (admin only)
             "provider":             settings["provider"],
-            "groq_api_key":         _mask(settings["groq_api_key"]),
-            "groq_model":           settings["groq_model"],
-            "ollama_api_key":       _mask(settings["ollama_api_key"]),
             "ollama_cloud_url":     settings["ollama_cloud_url"],
+            # API key presence (NEVER actual values)
+            "has_groq_key":         bool(settings["groq_api_key"]),
+            "has_ollama_key":       bool(settings["ollama_api_key"]),
+            # Model names
+            "groq_model":           settings["groq_model"],
             "hybrid_ollama_model":  settings["hybrid_ollama_model"],
             "hybrid_groq_model":    settings["hybrid_groq_model"],
+            # System
             "live_mode":            NOVA_LIVE_MODE,
             "role":                 "admin",
         }
 
-    # Normal user - no sensitive data
+    # Normal user: NO API keys, NO URLs, NO provider internals
     return {
         "model":                settings["model"],
         "temperature":          settings["temperature"],
         "top_p":                settings["top_p"],
         "num_predict":          settings["num_predict"],
         "system_prompt":        settings["system_prompt"],
-        "provider":             settings["provider"],
         "groq_model":           settings["groq_model"],
         "hybrid_ollama_model":  settings["hybrid_ollama_model"],
         "hybrid_groq_model":    settings["hybrid_groq_model"],
@@ -77,13 +74,16 @@ def get_current_settings(role="user"):
 
 def update_settings(data, role="user"):
     """
-    Update settings from a request payload with RBAC enforcement.
+    Update settings from a request payload with strict RBAC enforcement.
     Admin: can update everything
-    User: can only update non-sensitive fields
+    User: can only update non-sensitive fields (model, temperature, etc.)
     """
     settings = get_settings()
     blocked_fields = []
 
+    log.info("Settings POST: role=%s fields=%s", role, list(data.keys()))
+
+    # --- Fields anyone can edit ---
     if "model" in data:
         settings["model"] = str(data["model"])
     if "temperature" in data:
@@ -95,8 +95,15 @@ def update_settings(data, role="user"):
     if "system_prompt" in data:
         sp = data["system_prompt"].strip()
         settings["system_prompt"] = sp if sp else DEFAULT_SYSTEM_PROMPT
+    if "groq_model" in data:
+        settings["groq_model"] = str(data["groq_model"])
+    if "hybrid_ollama_model" in data:
+        settings["hybrid_ollama_model"] = str(data["hybrid_ollama_model"])
+    if "hybrid_groq_model" in data:
+        settings["hybrid_groq_model"] = str(data["hybrid_groq_model"])
 
-    # Provider switching
+    # --- Admin-only fields ---
+
     if "provider" in data:
         if role == "admin":
             requested = data["provider"]
@@ -108,46 +115,43 @@ def update_settings(data, role="user"):
             if requested in allowed:
                 settings["provider"] = requested
             elif NOVA_LIVE_MODE and requested == "ollama":
-                log.info("Rejected provider 'ollama' - live mode is active")
+                log.info("Rejected provider 'ollama' in live mode")
         else:
             blocked_fields.append("provider")
+            log.warning("RBAC: non-admin tried to change provider")
 
-    # API keys - admin only
     if "groq_api_key" in data:
         if role == "admin":
             key = str(data["groq_api_key"]).strip()
             if key and not key.startswith("****"):
                 settings["groq_api_key"] = key
+                log.info("Admin updated groq_api_key")
         else:
             blocked_fields.append("groq_api_key")
+            log.warning("RBAC: non-admin tried to change groq_api_key")
 
     if "ollama_api_key" in data:
         if role == "admin":
             key = str(data["ollama_api_key"]).strip()
             if key and not key.startswith("****"):
                 settings["ollama_api_key"] = key
+                log.info("Admin updated ollama_api_key")
         else:
             blocked_fields.append("ollama_api_key")
+            log.warning("RBAC: non-admin tried to change ollama_api_key")
 
-    # URLs - admin only
     if "ollama_cloud_url" in data:
         if role == "admin":
             url = str(data["ollama_cloud_url"]).strip()
             if url:
                 settings["ollama_cloud_url"] = url
+                log.info("Admin updated ollama_cloud_url")
         else:
             blocked_fields.append("ollama_cloud_url")
+            log.warning("RBAC: non-admin tried to change ollama_cloud_url")
 
-    # Model names - anyone can change
-    if "groq_model" in data:
-        settings["groq_model"] = str(data["groq_model"])
-    if "hybrid_ollama_model" in data:
-        settings["hybrid_ollama_model"] = str(data["hybrid_ollama_model"])
-    if "hybrid_groq_model" in data:
-        settings["hybrid_groq_model"] = str(data["hybrid_groq_model"])
-
-    log.info("Settings updated: provider=%s, model=%s (role=%s)",
-             settings["provider"], settings["model"], role)
+    log.info("Settings updated: provider=%s model=%s role=%s blocked=%s",
+             settings["provider"], settings["model"], role, blocked_fields or "none")
 
     result = {
         "status": "ok",
@@ -163,8 +167,7 @@ def update_settings(data, role="user"):
 
     if blocked_fields:
         result["blocked_fields"] = blocked_fields
-        result["message"] = "Some fields require admin access: " + ", ".join(blocked_fields)
-        log.warning("Non-admin tried to update admin-only fields: %s", blocked_fields)
+        result["message"] = "Admin access required for: " + ", ".join(blocked_fields)
 
     return result
 
