@@ -1,6 +1,6 @@
 """
-app.py — NOVA AI Assistant — Application Factory
-Thin entry point that wires together all modules and registers blueprints.
+app.py — NOVA AI Assistant — Application Factory (v2)
+Thin entry point wiring all modules, including hybrid evaluator and cache.
 """
 
 import os
@@ -26,7 +26,6 @@ CPU_CORES_PHYSICAL = psutil.cpu_count(logical=False) or 2
 
 
 def _detect_gpu():
-    """Return GPU info dict from nvidia-smi, or None if no NVIDIA GPU found."""
     try:
         r = subprocess.run(
             ['nvidia-smi',
@@ -63,15 +62,19 @@ from services.session_service import SessionService
 from services.prompt_builder import PromptBuilder
 from services.ai_service import AIService
 from services.command_service import CommandService
+from services.hybrid_evaluator import HybridEvaluator
+from services.cache_service import CacheService
 from controllers.chat_controller import ChatController
 
 # Wire services together
-memory_service  = MemoryService(memory_engine, bg_pool)
-session_service = SessionService(memory_engine._conn)  # reuse WAL connection
-prompt_builder  = PromptBuilder(memory_service)
-ai_service      = AIService(prompt_builder)
-command_service = CommandService(session_service, memory_service)
-chat_controller = ChatController(ai_service, session_service, memory_service, command_service)
+memory_service   = MemoryService(memory_engine, bg_pool)
+session_service  = SessionService(memory_engine._conn)
+prompt_builder   = PromptBuilder(memory_service)
+hybrid_evaluator = HybridEvaluator()
+cache_service    = CacheService()
+ai_service       = AIService(prompt_builder, hybrid_evaluator, cache_service)
+command_service  = CommandService(session_service, memory_service)
+chat_controller  = ChatController(ai_service, session_service, memory_service, command_service)
 
 # ─── Create Flask App ─────────────────────────────────────────────────────────
 app = Flask(
@@ -99,9 +102,9 @@ from routes.memory import memory_bp
 from routes.settings import settings_bp
 from routes.system import system_bp
 
-# Inject dependencies into route modules
+# Inject dependencies
 import routes.chat as chat_routes
-chat_routes.init_app(chat_controller)
+chat_routes.init_app(chat_controller, cache_service)
 
 import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)
@@ -117,17 +120,21 @@ app.register_blueprint(system_bp)
 
 # ─── Startup Logging ──────────────────────────────────────────────────────────
 if GPU_INFO:
-    log.info("GPU detected: %s  VRAM %dMB", GPU_INFO['name'], GPU_INFO['vram_total_mb'])
+    log.info("GPU: %s  VRAM %dMB", GPU_INFO['name'], GPU_INFO['vram_total_mb'])
 else:
-    log.info("No CUDA GPU detected — running CPU-only backend")
+    log.info("No CUDA GPU — CPU-only backend")
 log.info("CPU: %d physical / %d logical cores", CPU_CORES_PHYSICAL, CPU_CORES_LOGICAL)
-log.info("Background thread pool: %d workers", _BG_WORKERS)
-log.info("ENV: %s", NOVA_ENV)
-log.info("Using Ollama: %s", OLLAMA_URL)
+log.info("BG pool: %d workers", _BG_WORKERS)
+log.info("ENV: %s | Provider: %s", NOVA_ENV, ai_service._resolve_provider(
+    __import__('config').get_settings()['provider']
+))
+log.info("Hybrid evaluator: ACTIVE | Cache: ACTIVE (TTL=%ds)",
+         __import__('config').CACHE_TTL)
+log.info("Retry: max=%d backoff=%.1fs",
+         __import__('config').MAX_RETRY, __import__('config').RETRY_BACKOFF)
 if NOVA_ENV == "production":
-    log.info("Production mode — Ollama Local DISABLED, only cloud providers active.")
-log.info("Auth system ready.")
-log.info("All blueprints registered. NOVA is ready. ✓")
+    log.info("Production mode — Ollama Local DISABLED, localhost BLOCKED")
+log.info("All blueprints registered. NOVA v2 ready. ✓")
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
@@ -145,13 +152,14 @@ if __name__ == "__main__":
         print("  ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║")
         print("  ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝")
         print()
-        print(f"  [NOVA] Waitress WSGI Server  (production mode)")
-        print(f"  [NOVA] Listening on   http://{host}:{port}")
-        print(f"  [NOVA] Open           http://localhost:{port}")
-        print(f"  [NOVA] WSGI threads   {wsgi_threads}  (= logical CPU cores)")
-        print(f"  [NOVA] BG pool        {_BG_WORKERS} workers  (memory/learning tasks)")
-        print(f"  [NOVA] GPU            {'Yes — ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
-        print(f"  [NOVA] Channel timeout  120s")
+        print(f"  [NOVA v2] Waitress WSGI Server")
+        print(f"  [NOVA v2] http://{host}:{port}")
+        print(f"  [NOVA v2] Open → http://localhost:{port}")
+        print(f"  [NOVA v2] WSGI threads: {wsgi_threads}")
+        print(f"  [NOVA v2] BG workers: {_BG_WORKERS}")
+        print(f"  [NOVA v2] Hybrid evaluator: ACTIVE (parallel)")
+        print(f"  [NOVA v2] Response cache: ACTIVE")
+        print(f"  [NOVA v2] GPU: {'Yes — ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
         print()
         serve(
             app,
@@ -164,5 +172,4 @@ if __name__ == "__main__":
         )
     except ImportError:
         log.warning("Waitress not installed — falling back to Flask dev server")
-        log.info("Install with:  pip install waitress")
         app.run(host=host, port=port, debug=False, threaded=True)

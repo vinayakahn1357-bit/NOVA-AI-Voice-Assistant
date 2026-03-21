@@ -11,26 +11,25 @@ log = get_logger("routes.chat")
 
 chat_bp = Blueprint("chat", __name__)
 
-# The ChatController instance is injected via init_app()
+# Injected services
 _chat_controller = None
+_cache_service = None
 
 
-def init_app(chat_controller):
-    """Inject the ChatController instance."""
-    global _chat_controller
+def init_app(chat_controller, cache_service=None):
+    """Inject the ChatController and CacheService instances."""
+    global _chat_controller, _cache_service
     _chat_controller = chat_controller
+    _cache_service = cache_service
 
 
 @chat_bp.route("/chat", methods=["POST"])
 def chat():
     try:
-        session_id = (
-            (request.get_json() or {}).get("session_id")
-            or request.headers.get("X-Session-Id", "default")
-        )
+        data = request.get_json() or {}
+        session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
         chat_rate_limiter.check_or_raise(session_id)
 
-        data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided", "code": "NO_DATA"}), 400
 
@@ -38,8 +37,6 @@ def chat():
         return jsonify(result)
 
     except Exception as e:
-        # NovaError subclasses are handled by the global error handler
-        # This catches unexpected errors
         import traceback
         log.error("Chat error: %s\n%s", e, traceback.format_exc())
         return jsonify({"error": str(e), "code": "UNKNOWN"}), 500
@@ -48,13 +45,10 @@ def chat():
 @chat_bp.route("/chat/stream", methods=["POST"])
 def chat_stream():
     try:
-        session_id = (
-            (request.get_json() or {}).get("session_id")
-            or request.headers.get("X-Session-Id", "default")
-        )
+        data = request.get_json() or {}
+        session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
         chat_rate_limiter.check_or_raise(session_id)
 
-        data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided"}), 400
 
@@ -72,3 +66,20 @@ def reset_conversation():
     session_id = data.get("session_id") or request.headers.get("X-Session-Id")
     result = _chat_controller.handle_reset(session_id)
     return jsonify(result)
+
+
+@chat_bp.route("/chat/cache/clear", methods=["POST"])
+def clear_cache():
+    """Clear the response cache."""
+    if _cache_service:
+        _cache_service.clear()
+        return jsonify({"status": "ok", "message": "Cache cleared."})
+    return jsonify({"status": "ok", "message": "No cache configured."})
+
+
+@chat_bp.route("/chat/cache/stats", methods=["GET"])
+def cache_stats():
+    """Return cache statistics."""
+    if _cache_service:
+        return jsonify(_cache_service.stats())
+    return jsonify({"entries": 0, "message": "No cache configured."})

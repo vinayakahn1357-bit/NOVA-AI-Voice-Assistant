@@ -1,9 +1,11 @@
 """
 controllers/chat_controller.py — Chat Request Processing for NOVA
 Orchestrates: validate → detect commands → build prompt → call AI → save → return.
+Includes response timing.
 """
 
 import json
+import time
 
 from flask import Response, stream_with_context
 
@@ -27,8 +29,9 @@ class ChatController:
     def handle_chat(self, data: dict, session_id: str) -> dict:
         """
         Handle a non-streaming chat request.
-        Returns: {"reply": str, "session_id": str, "model": str, "provider": str}
+        Returns: {"reply": str, "session_id": str, "model": str, "provider": str, "time_ms": int}
         """
+        t0 = time.time()
         user_message = validate_chat_input(data.get("message", ""))
 
         # ── Command detection ──────────────────────────────────────────
@@ -44,6 +47,7 @@ class ChatController:
                 "provider": "internal",
                 "command": intent["command"],
                 "action": result.get("action"),
+                "time_ms": int((time.time() - t0) * 1000),
             }
 
         # ── Normal conversation ────────────────────────────────────────
@@ -63,11 +67,15 @@ class ChatController:
             user_message, ai_response, active_model, build_provider_config()
         )
 
+        elapsed_ms = int((time.time() - t0) * 1000)
+        log.info("Chat complete: %dms provider=%s model=%s", elapsed_ms, provider, active_model)
+
         return {
             "reply": ai_response,
             "session_id": session_id,
             "model": active_model,
             "provider": provider,
+            "time_ms": elapsed_ms,
         }
 
     def handle_chat_stream(self, data: dict, session_id: str) -> Response:
@@ -75,6 +83,7 @@ class ChatController:
         Handle a streaming (SSE) chat request.
         Returns a Flask Response with text/event-stream.
         """
+        t0 = time.time()
         user_message = validate_chat_input(data.get("message", ""))
 
         # ── Command detection ──────────────────────────────────────────
@@ -85,14 +94,17 @@ class ChatController:
             )
 
             def _cmd_gen():
-                # Send the command response as a single token, then done
                 yield f'data: {json.dumps({"token": result["response"]})}\n\n'
                 yield f'data: {json.dumps({"done": True, "session_id": session_id, "model": "nova-commands"})}\n\n'
 
             return Response(
                 stream_with_context(_cmd_gen()),
                 mimetype="text/event-stream",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "X-Response-Time": str(int((time.time() - t0) * 1000)),
+                },
             )
 
         # ── Normal streaming conversation ──────────────────────────────
@@ -105,7 +117,6 @@ class ChatController:
 
             for chunk in self._ai.generate_stream(history, user_message):
                 yield chunk
-                # Collect tokens for post-processing
                 try:
                     if chunk.startswith("data: "):
                         payload = json.loads(chunk[6:].strip())
@@ -128,7 +139,11 @@ class ChatController:
         return Response(
             stream_with_context(generate()),
             mimetype="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Response-Time": str(int((time.time() - t0) * 1000)),
+            },
         )
 
     def handle_reset(self, session_id: str, generate_summary: bool = True) -> dict:

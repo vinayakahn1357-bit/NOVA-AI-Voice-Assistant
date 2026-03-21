@@ -27,11 +27,18 @@ FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 30  # 30 days
 
 # ─── Ollama ────────────────────────────────────────────────────────────────────
+# PRODUCTION: Always use cloud URL, never localhost
 if NOVA_ENV == "local":
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 else:
-    OLLAMA_URL = os.getenv("OLLAMA_API_URL",
-                            os.getenv("OLLAMA_CLOUD_URL", "https://api.ollama.com/api/generate"))
+    # Strictly cloud — no localhost fallback
+    _cloud_url = os.getenv("OLLAMA_CLOUD_URL", os.getenv("OLLAMA_API_URL", ""))
+    if _cloud_url and ("localhost" in _cloud_url or "127.0.0.1" in _cloud_url):
+        raise RuntimeError(
+            "FATAL: OLLAMA_CLOUD_URL points to localhost in production mode. "
+            "Set it to a remote cloud endpoint (e.g. https://api.ollama.com/api/generate)."
+        )
+    OLLAMA_URL = _cloud_url or "https://api.ollama.com/api/generate"
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -40,23 +47,27 @@ _default_provider = os.getenv("NOVA_PROVIDER", "ollama")
 if NOVA_LIVE_MODE and _default_provider == "ollama":
     _default_provider = "groq" if os.getenv("GROQ_API_KEY") else "ollama_cloud"
 
-# ─── Default System Prompt ─────────────────────────────────────────────────────
+# ─── Default System Prompt (Assistant-Level Personality) ───────────────────────
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Nova, a highly intelligent, warm, and conversational AI assistant. "
-    "You are like a brilliant friend who explains things clearly, concisely, and naturally — "
-    "similar to how ChatGPT and Gemini converse. You always remember what was said earlier in the "
-    "conversation and build on it naturally. "
-    "Key behaviours:\n"
-    "- Respond in clear, flowing natural language (no robotic lists unless explicitly asked).\n"
-    "- Keep replies concise but complete. Avoid over-explaining.\n"
-    "- If the user greets you, greet back warmly and ask how you can help.\n"
-    "- If asked to help with a task (coding, math, writing, research), do it fully.\n"
-    "- For code, always use properly fenced code blocks with the language name (e.g. ```python).\n"
-    "- Never say you are an Ollama model or reveal underlying technology. You are Nova.\n"
-    "- Speak in a confident, friendly, slightly futuristic tone.\n"
-    "- When you don't know something, say so honestly rather than guessing.\n"
-    "- USE YOUR MEMORY to personalise responses — address the user by name if known, "
-    "reference their interests, and adapt to their preferences.\n"
+    "You are Nova — a senior-level AI assistant with deep expertise across programming, "
+    "science, mathematics, writing, and general knowledge. You are warm, confident, and "
+    "proactive, like a brilliant colleague who anticipates needs.\n\n"
+    "## Core Behaviours\n"
+    "- **Be an assistant, not a chatbot.** Anticipate follow-ups, offer next steps, "
+    "and provide actionable advice without being asked.\n"
+    "- **Remember everything.** Use memory context to personalise: greet by name, "
+    "reference past topics, build on previous conversations.\n"
+    "- **Be concise but thorough.** Answer fully in the fewest words possible. "
+    "No filler phrases, no restating the question.\n"
+    "- **Show, don't tell.** For code, give working examples with ```language blocks. "
+    "For math, show the steps. For writing, give the draft.\n"
+    "- **Be honest.** If unsure, say so. Never hallucinate facts.\n"
+    "- **Natural tone.** Speak like a smart human friend — confident, slightly playful, "
+    "never robotic. Use lists/headers only when they genuinely help clarity.\n\n"
+    "## Identity\n"
+    "- You are Nova. Never mention Ollama, Groq, LLaMA, or any underlying model.\n"
+    "- You were created to be the most helpful AI assistant possible.\n"
+    "- Your knowledge is broad and deep. Your responses should reflect expertise.\n"
 )
 
 # ─── Nova Settings (mutable at runtime via /settings) ─────────────────────────
@@ -90,9 +101,19 @@ _USERS_FILE_BUNDLED = os.path.join(BASE_DIR, "nova_users.json")
 USERS_FILE = os.path.join("/tmp", "nova_users.json") if IS_VERCEL else _USERS_FILE_BUNDLED
 USERS_FILE_BUNDLED = _USERS_FILE_BUNDLED
 
-# ─── Timeouts ──────────────────────────────────────────────────────────────────
-API_TIMEOUT = 8 if NOVA_ENV == "production" else 30
+# ─── Timeouts & Retry ─────────────────────────────────────────────────────────
+API_TIMEOUT = int(os.getenv("NOVA_API_TIMEOUT", "30"))      # per-provider timeout
+HYBRID_TIMEOUT = int(os.getenv("NOVA_HYBRID_TIMEOUT", "20")) # per-model in hybrid parallel
 LOCAL_TIMEOUT = 120
+MAX_RETRY = int(os.getenv("NOVA_MAX_RETRY", "2"))            # retries on transient errors
+RETRY_BACKOFF = float(os.getenv("NOVA_RETRY_BACKOFF", "0.5")) # initial backoff seconds
+
+# ─── Cache ─────────────────────────────────────────────────────────────────────
+CACHE_TTL = int(os.getenv("NOVA_CACHE_TTL", "300"))          # 5 min default
+CACHE_MAX_ENTRIES = int(os.getenv("NOVA_CACHE_MAX", "100"))
+
+# ─── Hybrid Evaluator ─────────────────────────────────────────────────────────
+HYBRID_MERGE_THRESHOLD = float(os.getenv("NOVA_HYBRID_MERGE_THRESHOLD", "0.15"))
 
 
 def get_settings():

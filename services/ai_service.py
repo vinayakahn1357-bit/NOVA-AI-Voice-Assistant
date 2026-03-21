@@ -1,9 +1,11 @@
 """
-services/ai_service.py — LLM Provider Dispatch for NOVA
-Handles all communication with AI providers: Ollama Local, Ollama Cloud, Groq, Hybrid.
+services/ai_service.py — LLM Provider Dispatch for NOVA (v2)
+Handles all communication with AI providers: Ollama Cloud, Groq, and True Parallel Hybrid.
+Includes retry logic, response caching, and latency logging.
 """
 
 import json
+import time
 import requests
 
 from config import (
@@ -12,30 +14,24 @@ from config import (
 )
 from utils.logger import get_logger
 from utils.errors import NovaProviderError
+from utils.retry_handler import with_retry
 
 log = get_logger("ai_service")
 
-# ─── Hybrid Query Classifier ──────────────────────────────────────────────────
-_COMPLEX_KEYWORDS = (
-    "def ", "function ", "class ", "import ", "```", "code", "debug", "error",
-    "bug", "implement", "algorithm", "write a ", "create a ", "build a ",
-    "program", "script", "api", "database", "sql", "regex",
-    "math", "calculate", "solve", "equation", "prove", "integral",
-    "derivative", "matrix", "statistics", "probability",
-    "analyze", "analyse", "summarize", "summarise", "essay", "detailed",
-    "comprehensive", "explain why", "compare", "difference between",
-    "pros and cons", "advantages", "disadvantages", "research",
-    "translate", "rewrite", "refactor",
-)
-_COMPLEX_WORD_THRESHOLD = 60
-_SIMPLE_WORD_THRESHOLD = 30
-
 
 class AIService:
-    """Encapsulates all LLM provider communication and routing logic."""
+    """
+    Encapsulates all LLM provider communication with:
+    - Retry logic on transient failures
+    - Response caching for repeated queries
+    - True parallel hybrid execution via HybridEvaluator
+    - Latency logging on every call
+    """
 
-    def __init__(self, prompt_builder):
-        self._prompt_builder = prompt_builder
+    def __init__(self, prompt_builder, hybrid_evaluator=None, cache_service=None):
+        self._prompt = prompt_builder
+        self._hybrid = hybrid_evaluator
+        self._cache = cache_service
 
     # ─── Provider Checks ──────────────────────────────────────────────────
 
@@ -47,9 +43,10 @@ class AIService:
     def _groq_configured() -> bool:
         return bool(get_settings().get("groq_api_key", "").strip())
 
-    # ─── Low-Level Provider Calls ─────────────────────────────────────────
+    # ─── Low-Level Provider Calls (with retry) ────────────────────────────
 
     @staticmethod
+    @with_retry(label="ollama_local")
     def _call_ollama_local(full_prompt: str, stream: bool = False):
         """Call local Ollama. Only allowed in local ENV."""
         if NOVA_ENV != "local":
@@ -72,15 +69,23 @@ class AIService:
         return requests.post(OLLAMA_URL, json=payload, stream=stream, timeout=LOCAL_TIMEOUT)
 
     @staticmethod
-    def _call_ollama_cloud(full_prompt: str, stream: bool = False):
-        """Call Ollama Cloud endpoint."""
+    @with_retry(label="ollama_cloud")
+    def _call_ollama_cloud(full_prompt: str, stream: bool = False,
+                           model_override: str = ""):
+        """Call Ollama Cloud endpoint with retry logic."""
         settings = get_settings()
         cloud_url = settings["ollama_cloud_url"] or "https://api.ollama.com/api/generate"
-        model = (
+
+        # Production guard: never hit localhost
+        if NOVA_LIVE_MODE and ("localhost" in cloud_url or "127.0.0.1" in cloud_url):
+            raise ConnectionError("Ollama Cloud URL points to localhost in production!")
+
+        model = model_override or (
             settings["hybrid_ollama_model"]
             if settings["provider"] == "hybrid"
             else settings["model"]
-        ) or "mistral"
+        ) or "gemma3:12b"
+
         payload = {
             "model": model,
             "prompt": full_prompt,
@@ -98,8 +103,9 @@ class AIService:
                              stream=stream, timeout=API_TIMEOUT)
 
     @staticmethod
+    @with_retry(label="groq")
     def _call_groq(messages: list, stream: bool = False, model_override: str = ""):
-        """Call Groq API."""
+        """Call Groq API with retry logic."""
         settings = get_settings()
         groq_model = model_override or (
             settings["hybrid_groq_model"]
@@ -121,31 +127,6 @@ class AIService:
         return requests.post(GROQ_API_URL, json=payload, headers=headers,
                              stream=stream, timeout=API_TIMEOUT)
 
-    # ─── Hybrid Classification ────────────────────────────────────────────
-
-    @staticmethod
-    def _classify_query(message: str) -> str:
-        """Returns 'groq' for complex queries, 'ollama_cloud' for simple ones."""
-        lower = message.lower()
-        word_count = len(message.split())
-        if word_count > _COMPLEX_WORD_THRESHOLD:
-            return "groq"
-        if any(kw in lower for kw in _COMPLEX_KEYWORDS):
-            return "groq"
-        return "ollama_cloud"
-
-    def _hybrid_pick_sub(self, message: str) -> str:
-        """Pick sub-provider for hybrid mode."""
-        ollama_ok = self._ollama_cloud_configured()
-        groq_ok = self._groq_configured()
-        if not ollama_ok and not groq_ok:
-            return "none"
-        if not ollama_ok:
-            return "groq"
-        if not groq_ok:
-            return "ollama_cloud"
-        return self._classify_query(message)
-
     # ─── Resolve Provider ─────────────────────────────────────────────────
 
     def _resolve_provider(self, provider: str) -> str:
@@ -164,113 +145,134 @@ class AIService:
 
     def generate(self, history: list, user_message: str) -> tuple:
         """
-        Generate a full AI response.
+        Generate a full AI response with caching and timing.
         Returns: (ai_response: str, active_model: str, provider: str)
-        Raises NovaProviderError if all providers fail.
         """
+        t0 = time.time()
         settings = get_settings()
         provider = self._resolve_provider(settings["provider"])
-        full_prompt = self._prompt_builder.build_ollama_prompt(history)
-        groq_messages = self._prompt_builder.build_chat_messages(history)
+
+        # Build prompts (identical for both providers)
+        full_prompt = self._prompt.build_ollama_prompt(history)
+        groq_messages = self._prompt.build_chat_messages(history)
+
+        # ── Cache check ───────────────────────────────────────────────
+        if self._cache and provider != "hybrid":
+            cached = self._cache.get(provider, settings.get("model", ""), groq_messages)
+            if cached:
+                log.info("Cache HIT (%.3fs)", time.time() - t0)
+                return cached, settings.get("model", ""), provider
 
         ai_response = ""
         active_model = settings["model"]
 
-        if provider == "hybrid":
-            ai_response, active_model = self._generate_hybrid(
-                user_message, full_prompt, history, groq_messages
+        if provider == "hybrid" and self._hybrid:
+            ai_response, active_model, provider = self._generate_hybrid_parallel(
+                user_message, full_prompt, groq_messages
             )
         elif provider == "groq" and self._groq_configured():
-            r = self._call_groq(groq_messages, model_override=settings["groq_model"])
-            if r.status_code != 200:
-                err_detail = r.json().get("error", {}).get("message", "Groq API error")
-                raise NovaProviderError(err_detail, code="GROQ_ERROR")
-            ai_response = r.json()["choices"][0]["message"]["content"].strip()
-            active_model = settings["groq_model"]
+            ai_response, active_model = self._generate_groq(groq_messages)
         elif provider == "ollama_cloud" and self._ollama_cloud_configured():
-            r = self._call_ollama_cloud(full_prompt)
-            if r.status_code != 200:
-                raise NovaProviderError(f"Ollama Cloud error: {r.text[:200]}", code="OLLAMA_CLOUD_ERROR")
-            ai_response = r.json().get("response", "").strip()
-            active_model = settings["model"]
+            ai_response, active_model = self._generate_ollama_cloud(full_prompt)
         else:
             ai_response, active_model = self._generate_local_with_fallback(
-                full_prompt, history, groq_messages
+                full_prompt, groq_messages
             )
 
         if not ai_response:
             ai_response = "I'm not sure how to respond to that. Could you rephrase?"
 
+        elapsed = round(time.time() - t0, 2)
+        log.info("Generated response: provider=%s model=%s time=%.2fs len=%d",
+                 provider, active_model, elapsed, len(ai_response))
+
+        # ── Cache store ───────────────────────────────────────────────
+        if self._cache and provider != "hybrid":
+            self._cache.put(provider, active_model, groq_messages, ai_response)
+
         return ai_response, active_model, provider
 
-    def _generate_hybrid(self, user_message, full_prompt, history, groq_messages) -> tuple:
-        """Handle hybrid provider routing."""
+    # ─── Provider-Specific Generation ─────────────────────────────────────
+
+    def _generate_groq(self, messages: list) -> tuple:
+        """Generate via Groq. Returns (text, model)."""
         settings = get_settings()
-        sub = self._hybrid_pick_sub(user_message)
-        log.info("Hybrid → %s (%d words)", sub, len(user_message.split()))
+        r = self._call_groq(messages, model_override=settings["groq_model"])
+        if r.status_code != 200:
+            err = r.json().get("error", {}).get("message", f"Groq API error ({r.status_code})")
+            raise NovaProviderError(err, code="GROQ_ERROR")
+        text = r.json()["choices"][0]["message"]["content"].strip()
+        return text, settings["groq_model"]
 
-        if sub == "none":
-            if not NOVA_LIVE_MODE:
-                sub = "_ollama_local"
-            else:
-                raise NovaProviderError(
-                    "No cloud AI provider configured. Set a Groq API key or Ollama Cloud URL."
-                )
+    def _generate_ollama_cloud(self, full_prompt: str) -> tuple:
+        """Generate via Ollama Cloud. Returns (text, model)."""
+        settings = get_settings()
+        r = self._call_ollama_cloud(full_prompt)
+        if r.status_code != 200:
+            raise NovaProviderError(
+                f"Ollama Cloud error ({r.status_code}): {r.text[:200]}",
+                code="OLLAMA_CLOUD_ERROR",
+            )
+        text = r.json().get("response", "").strip()
+        return text, settings["model"]
 
-        ai_response = ""
-        actual_sub = sub
+    # ─── True Parallel Hybrid ─────────────────────────────────────────────
 
-        if sub == "groq":
-            try:
-                r = self._call_groq(groq_messages)
-                if r.status_code == 200:
-                    ai_response = r.json()["choices"][0]["message"]["content"].strip()
-                else:
-                    log.warning("Hybrid Groq failed (%d), trying Ollama Cloud fallback", r.status_code)
-            except Exception as exc:
-                log.warning("Hybrid Groq exception: %s, trying Ollama Cloud fallback", exc)
-            if not ai_response and self._ollama_cloud_configured():
-                r = self._call_ollama_cloud(full_prompt)
-                if r.status_code == 200:
-                    ai_response = r.json().get("response", "").strip()
-                    actual_sub = "ollama_cloud"
+    def _generate_hybrid_parallel(self, user_message, full_prompt, groq_messages) -> tuple:
+        """
+        Execute both providers in parallel via HybridEvaluator.
+        Returns: (ai_response, active_model, provider_source)
+        """
+        settings = get_settings()
 
-        elif sub == "ollama_cloud":
-            try:
-                r = self._call_ollama_cloud(full_prompt)
-                if r.status_code == 200:
-                    ai_response = r.json().get("response", "").strip()
-                else:
-                    log.warning("Hybrid Ollama Cloud failed (%d), trying Groq fallback", r.status_code)
-            except Exception as exc:
-                log.warning("Hybrid Ollama Cloud exception: %s, trying Groq fallback", exc)
-            if not ai_response and self._groq_configured():
-                r = self._call_groq(groq_messages)
-                if r.status_code == 200:
-                    ai_response = r.json()["choices"][0]["message"]["content"].strip()
-                    actual_sub = "groq"
+        ollama_ok = self._ollama_cloud_configured()
+        groq_ok = self._groq_configured()
 
+        if not ollama_ok and not groq_ok:
+            if NOVA_LIVE_MODE:
+                raise NovaProviderError("No cloud AI provider configured for hybrid mode.")
+            # Local fallback
+            return self._generate_local_with_fallback(full_prompt, groq_messages) + ("ollama",)
+
+        # If only one provider is configured, skip parallel execution
+        if not ollama_ok:
+            text, model = self._generate_groq(groq_messages)
+            return text, model, "groq"
+        if not groq_ok:
+            text, model = self._generate_ollama_cloud(full_prompt)
+            return text, model, "ollama_cloud"
+
+        # ── Both configured: true parallel execution ──────────────────
+        def _ollama_fn():
+            r = self._call_ollama_cloud(full_prompt)
+            if r.status_code != 200:
+                raise NovaProviderError(f"Ollama Cloud: {r.status_code}")
+            return r.json().get("response", "").strip()
+
+        def _groq_fn():
+            r = self._call_groq(groq_messages)
+            if r.status_code != 200:
+                raise NovaProviderError(f"Groq: {r.status_code}")
+            return r.json()["choices"][0]["message"]["content"].strip()
+
+        result = self._hybrid.evaluate_parallel(_ollama_fn, _groq_fn, user_message)
+
+        if not result["response"]:
+            raise NovaProviderError("Both AI providers failed in hybrid mode.")
+
+        # Map source to model name
+        source = result["source"]
+        if source in ("groq", "merged"):
+            model = settings["hybrid_groq_model"] or settings["groq_model"]
         else:
-            try:
-                r = self._call_ollama_local(full_prompt)
-                if r.status_code == 200:
-                    ai_response = r.json().get("response", "").strip()
-            except Exception as exc:
-                log.warning("Hybrid local Ollama failed: %s", exc)
-            if not ai_response and self._groq_configured():
-                log.info("Fallback to Groq (local Ollama failed)")
-                try:
-                    r = self._call_groq(groq_messages)
-                    if r.status_code == 200:
-                        ai_response = r.json()["choices"][0]["message"]["content"].strip()
-                        actual_sub = "groq"
-                except Exception as exc2:
-                    log.warning("Groq fallback also failed: %s", exc2)
+            model = settings["hybrid_ollama_model"] or settings["model"]
 
-        active_model = self._resolve_hybrid_model(actual_sub)
-        return ai_response, active_model
+        if source == "merged":
+            model = f"{settings['hybrid_ollama_model']}+{settings['hybrid_groq_model']}"
 
-    def _generate_local_with_fallback(self, full_prompt, history, groq_messages) -> tuple:
+        return result["response"], model, f"hybrid({source})"
+
+    def _generate_local_with_fallback(self, full_prompt, groq_messages) -> tuple:
         """Try local Ollama with Groq fallback."""
         settings = get_settings()
         ai_response = ""
@@ -288,10 +290,8 @@ class AIService:
         if not ai_response and self._groq_configured():
             log.info("Fallback to Groq")
             try:
-                r = self._call_groq(groq_messages)
-                if r.status_code == 200:
-                    ai_response = r.json()["choices"][0]["message"]["content"].strip()
-                    active_model = settings["groq_model"]
+                text, model = self._generate_groq(groq_messages)
+                return text, model
             except Exception as exc2:
                 log.warning("Groq fallback also failed: %s", exc2)
 
@@ -300,29 +300,18 @@ class AIService:
 
         return ai_response, active_model
 
-    @staticmethod
-    def _resolve_hybrid_model(sub: str) -> str:
-        settings = get_settings()
-        if sub == "groq":
-            return settings["hybrid_groq_model"] or settings["groq_model"]
-        elif sub == "ollama_cloud":
-            return settings["hybrid_ollama_model"] or settings["model"]
-        return settings["model"]
-
     # ─── Streaming Generation ─────────────────────────────────────────────
 
     def generate_stream(self, history: list, user_message: str):
         """
-        Generator that yields SSE-formatted tokens.
-        Yields: 'data: {"token": "..."}\n\n' for each token
-                'data: {"done": true, ...}\n\n' when complete
-                'data: {"error": "..."}\n\n' on failure
-        Returns the full reply text.
+        Generator yielding SSE-formatted tokens.
+        Supports streaming for single-provider modes.
+        For hybrid mode: falls back to non-streaming parallel then streams result.
         """
         settings = get_settings()
         provider = self._resolve_provider(settings["provider"])
-        full_prompt = self._prompt_builder.build_ollama_prompt(history)
-        groq_messages = self._prompt_builder.build_chat_messages(history)
+        full_prompt = self._prompt.build_ollama_prompt(history)
+        groq_messages = self._prompt.build_chat_messages(history)
 
         full_reply = []
         active_model = settings["model"]
@@ -336,11 +325,10 @@ class AIService:
 
         try:
             if use_hybrid:
-                yield from self._stream_hybrid(
-                    user_message, full_prompt, history, groq_messages, full_reply
+                # Hybrid: parallel execution, then stream the winning result
+                yield from self._stream_hybrid_parallel(
+                    user_message, full_prompt, groq_messages, full_reply
                 )
-                active_model = full_reply[-1] if full_reply and full_reply[-1].startswith("__MODEL__") else settings["model"]
-                # Extract model tag if present
                 if full_reply and full_reply[-1].startswith("__MODEL__"):
                     active_model = full_reply.pop()[9:]
 
@@ -349,14 +337,14 @@ class AIService:
 
             elif use_ollama_cloud:
                 yield from self._stream_ollama_cloud(
-                    full_prompt, history, groq_messages, full_reply
+                    full_prompt, groq_messages, full_reply
                 )
                 if full_reply and full_reply[-1].startswith("__MODEL__"):
                     active_model = full_reply.pop()[9:]
 
             else:
                 if NOVA_ENV != "local":
-                    yield f'data: {json.dumps({"error": "No AI provider available. Configure Groq or Ollama Cloud."})}\n\n'
+                    yield f'data: {json.dumps({"error": "No AI provider available."})}\n\n'
                     return
                 yield from self._stream_ollama_local(full_prompt, full_reply)
 
@@ -375,11 +363,79 @@ class AIService:
 
         complete_reply = "".join(full_reply).strip()
         if not complete_reply:
-            yield f'data: {json.dumps({"error": "AI returned an empty response. Please try again."})}\n\n'
+            yield f'data: {json.dumps({"error": "AI returned an empty response."})}\n\n'
 
         yield f'data: {json.dumps({"done": True, "session_id": "", "model": active_model})}\n\n'
 
     # ─── Streaming Helpers ────────────────────────────────────────────────
+
+    def _stream_hybrid_parallel(self, user_message, full_prompt, groq_messages, full_reply):
+        """
+        Hybrid streaming: execute both providers in parallel (non-streaming),
+        pick/merge the best, then stream the result token-by-token.
+        This gives UX of streaming while leveraging parallel evaluation.
+        """
+        if not self._hybrid:
+            # No evaluator — fall back to Groq stream
+            yield from self._stream_groq(groq_messages, full_reply)
+            return
+
+        settings = get_settings()
+        ollama_ok = self._ollama_cloud_configured()
+        groq_ok = self._groq_configured()
+
+        if not ollama_ok and not groq_ok:
+            yield f'data: {json.dumps({"error": "No AI provider configured."})}\n\n'
+            return
+
+        # If only one provider available, stream directly from it
+        if not ollama_ok:
+            yield from self._stream_groq(groq_messages, full_reply)
+            return
+        if not groq_ok:
+            yield from self._stream_ollama_cloud(full_prompt, groq_messages, full_reply)
+            return
+
+        # Both available: parallel non-streaming execution
+        def _ollama_fn():
+            r = self._call_ollama_cloud(full_prompt)
+            if r.status_code != 200:
+                raise NovaProviderError(f"Ollama: {r.status_code}")
+            return r.json().get("response", "").strip()
+
+        def _groq_fn():
+            r = self._call_groq(groq_messages)
+            if r.status_code != 200:
+                raise NovaProviderError(f"Groq: {r.status_code}")
+            return r.json()["choices"][0]["message"]["content"].strip()
+
+        result = self._hybrid.evaluate_parallel(_ollama_fn, _groq_fn, user_message)
+
+        if not result["response"]:
+            yield f'data: {json.dumps({"error": "Both providers failed in hybrid."})}\n\n'
+            return
+
+        # Stream the winning response word-by-word for smooth UX
+        response = result["response"]
+        words = response.split(" ")
+        chunk_size = 3  # Stream 3 words at a time for natural flow
+
+        for i in range(0, len(words), chunk_size):
+            token = " ".join(words[i:i + chunk_size])
+            if i > 0:
+                token = " " + token
+            full_reply.append(token)
+            yield f'data: {json.dumps({"token": token})}\n\n'
+
+        # Append model tag
+        source = result["source"]
+        if source in ("groq", "merged"):
+            model = settings["hybrid_groq_model"] or settings["groq_model"]
+        else:
+            model = settings["hybrid_ollama_model"] or settings["model"]
+        if source == "merged":
+            model = f"{settings['hybrid_ollama_model']}+{settings['hybrid_groq_model']}"
+        full_reply.append(f"__MODEL__{model}")
 
     def _stream_groq(self, messages, full_reply):
         """Stream from Groq API."""
@@ -387,8 +443,7 @@ class AIService:
         log.info("Groq stream: model=%s", settings["groq_model"])
         with self._call_groq(messages, stream=True) as r:
             if r.status_code != 200:
-                err_body = r.text[:300]
-                log.error("Groq stream ERROR: %s", err_body)
+                log.error("Groq stream ERROR: %d", r.status_code)
                 yield f'data: {json.dumps({"error": f"Groq API error ({r.status_code})"})}\n\n'
                 return
             yield from self._parse_groq_stream(r, full_reply)
@@ -410,7 +465,7 @@ class AIService:
                 except json.JSONDecodeError:
                     continue
 
-    def _stream_ollama_cloud(self, full_prompt, history, groq_messages, full_reply):
+    def _stream_ollama_cloud(self, full_prompt, groq_messages, full_reply):
         """Stream from Ollama Cloud with Groq fallback."""
         ollama_cloud_ok = False
         try:
@@ -422,7 +477,7 @@ class AIService:
                         try:
                             chunk = json.loads(line)
                             if chunk.get("error"):
-                                log.warning("Ollama Cloud model error: %s", chunk["error"])
+                                log.warning("Ollama Cloud error: %s", chunk["error"])
                                 break
                             token = chunk.get("response", "")
                             if token:
@@ -456,113 +511,7 @@ class AIService:
             except Exception as exc2:
                 log.warning("Groq fallback stream exception: %s", exc2)
         elif not full_reply:
-            yield f'data: {json.dumps({"error": "Ollama Cloud failed and no Groq fallback configured."})}\n\n'
-
-    def _stream_hybrid(self, user_message, full_prompt, history, groq_messages, full_reply):
-        """Stream in hybrid mode with cross-fallback."""
-        settings = get_settings()
-        sub = self._hybrid_pick_sub(user_message)
-        log.info("Hybrid stream → %s (%d words)", sub, len(user_message.split()))
-
-        if sub == "none":
-            if not NOVA_LIVE_MODE:
-                sub = "_ollama_local"
-            else:
-                yield f'data: {json.dumps({"error": "No cloud AI provider configured."})}\n\n'
-                return
-
-        used_provider = None
-
-        if sub == "groq":
-            try:
-                with self._call_groq(groq_messages, stream=True) as r:
-                    if r.status_code == 200:
-                        yield from self._parse_groq_stream(r, full_reply)
-                        used_provider = "groq"
-            except Exception as exc:
-                log.warning("Hybrid stream Groq failed: %s, trying Ollama Cloud", exc)
-                full_reply.clear()
-
-        elif sub == "ollama_cloud":
-            try:
-                with self._call_ollama_cloud(full_prompt, stream=True) as r:
-                    if r.status_code == 200:
-                        for line in r.iter_lines():
-                            if not line:
-                                continue
-                            try:
-                                chunk = json.loads(line)
-                                token = chunk.get("response", "")
-                                if token:
-                                    full_reply.append(token)
-                                    yield f'data: {json.dumps({"token": token})}\n\n'
-                                if chunk.get("done"):
-                                    break
-                            except json.JSONDecodeError:
-                                continue
-                        used_provider = "ollama_cloud"
-                    else:
-                        log.warning("Hybrid Ollama Cloud error %d, trying Groq", r.status_code)
-            except Exception as exc:
-                log.warning("Hybrid stream Ollama Cloud failed: %s, trying Groq", exc)
-                full_reply.clear()
-
-        # Fallback if primary failed
-        if not used_provider:
-            if sub == "groq" and self._ollama_cloud_configured():
-                try:
-                    with self._call_ollama_cloud(full_prompt, stream=True) as r:
-                        if r.status_code == 200:
-                            for line in r.iter_lines():
-                                if not line:
-                                    continue
-                                try:
-                                    chunk = json.loads(line)
-                                    token = chunk.get("response", "")
-                                    if token:
-                                        full_reply.append(token)
-                                        yield f'data: {json.dumps({"token": token})}\n\n'
-                                    if chunk.get("done"):
-                                        break
-                                except json.JSONDecodeError:
-                                    continue
-                            used_provider = "ollama_cloud"
-                except Exception as exc:
-                    log.warning("Hybrid fallback Ollama Cloud failed: %s", exc)
-
-            elif sub == "ollama_cloud" and self._groq_configured():
-                try:
-                    with self._call_groq(groq_messages, stream=True) as r:
-                        if r.status_code == 200:
-                            yield from self._parse_groq_stream(r, full_reply)
-                            used_provider = "groq"
-                        else:
-                            log.warning("Hybrid fallback Groq error: %d", r.status_code)
-                except Exception as exc:
-                    log.warning("Hybrid fallback Groq exception: %s", exc)
-
-            elif NOVA_ENV == "local":
-                try:
-                    with self._call_ollama_local(full_prompt, stream=True) as r:
-                        for line in r.iter_lines():
-                            if not line:
-                                continue
-                            try:
-                                chunk = json.loads(line)
-                                token = chunk.get("response", "")
-                                if token:
-                                    full_reply.append(token)
-                                    yield f'data: {json.dumps({"token": token})}\n\n'
-                                if chunk.get("done"):
-                                    break
-                            except json.JSONDecodeError:
-                                continue
-                        used_provider = "_ollama_local"
-                except Exception as exc:
-                    log.warning("Hybrid fallback local Ollama exception: %s", exc)
-
-        active_model = self._resolve_hybrid_model(used_provider or sub)
-        full_reply.append(f"__MODEL__{active_model}")
+            yield f'data: {json.dumps({"error": "Ollama Cloud failed, no Groq fallback."})}\n\n'
 
     @staticmethod
     def _parse_groq_stream(response, full_reply):
