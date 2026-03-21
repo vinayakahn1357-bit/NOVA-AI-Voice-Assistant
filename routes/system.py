@@ -1,5 +1,5 @@
 """
-routes/system.py — System & TTS Routes Blueprint for NOVA
+routes/system.py — System, TTS, & Diagnostics Routes for NOVA
 """
 
 import psutil
@@ -12,20 +12,22 @@ log = get_logger("routes.system")
 
 system_bp = Blueprint("system", __name__)
 
-# Cache GPU info at import time
+# Cache system info at import time
 _GPU_INFO = None
 _CPU_CORES_LOGICAL = None
 _CPU_CORES_PHYSICAL = None
 _BG_WORKERS = None
+_OLLAMA_VALIDATOR = None
 
 
-def init_app(gpu_info, cpu_logical, cpu_physical, bg_workers):
-    """Inject system info."""
-    global _GPU_INFO, _CPU_CORES_LOGICAL, _CPU_CORES_PHYSICAL, _BG_WORKERS
+def init_app(gpu_info, cpu_logical, cpu_physical, bg_workers, ollama_validator=None):
+    """Inject system info and services."""
+    global _GPU_INFO, _CPU_CORES_LOGICAL, _CPU_CORES_PHYSICAL, _BG_WORKERS, _OLLAMA_VALIDATOR
     _GPU_INFO = gpu_info
     _CPU_CORES_LOGICAL = cpu_logical
     _CPU_CORES_PHYSICAL = cpu_physical
     _BG_WORKERS = bg_workers
+    _OLLAMA_VALIDATOR = ollama_validator
 
 
 @system_bp.route("/health")
@@ -87,3 +89,27 @@ def tts_voices():
         return jsonify({"voices": voices})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@system_bp.route("/api/test-ollama", methods=["GET"])
+def test_ollama():
+    """
+    Full diagnostic test of Ollama connectivity, model availability,
+    and model validation. Returns structured debug info.
+    """
+    if not _OLLAMA_VALIDATOR:
+        return jsonify({
+            "status": "failed",
+            "error": "OllamaValidator not configured on this server",
+        }), 500
+
+    try:
+        result = _OLLAMA_VALIDATOR.test_connection()
+        status_code = 200 if result["status"] == "connected" else 503
+        return jsonify(result), status_code
+    except Exception as e:
+        log.error("test-ollama error: %s", e)
+        return jsonify({
+            "status": "failed",
+            "error": str(e),
+        }), 500

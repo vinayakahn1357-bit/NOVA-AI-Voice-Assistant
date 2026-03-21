@@ -64,17 +64,31 @@ from services.ai_service import AIService
 from services.command_service import CommandService
 from services.hybrid_evaluator import HybridEvaluator
 from services.cache_service import CacheService
+from services.query_analyzer import QueryAnalyzer
+from services.ollama_validator import OllamaValidator
+from services.performance_tracker import PerformanceTracker
+from services.model_router import ModelRouter
+from utils.response_formatter import ResponseFormatter
 from controllers.chat_controller import ChatController
 
 # Wire services together
-memory_service   = MemoryService(memory_engine, bg_pool)
-session_service  = SessionService(memory_engine._conn)
-prompt_builder   = PromptBuilder(memory_service)
-hybrid_evaluator = HybridEvaluator()
-cache_service    = CacheService()
-ai_service       = AIService(prompt_builder, hybrid_evaluator, cache_service)
-command_service  = CommandService(session_service, memory_service)
-chat_controller  = ChatController(ai_service, session_service, memory_service, command_service)
+memory_service      = MemoryService(memory_engine, bg_pool)
+session_service     = SessionService(memory_engine._conn)
+prompt_builder      = PromptBuilder(memory_service)
+hybrid_evaluator    = HybridEvaluator()
+cache_service       = CacheService()
+query_analyzer      = QueryAnalyzer()
+response_formatter  = ResponseFormatter()
+ollama_validator    = OllamaValidator()
+performance_tracker = PerformanceTracker()
+model_router        = ModelRouter(performance_tracker)
+ai_service          = AIService(
+    prompt_builder, hybrid_evaluator, cache_service,
+    query_analyzer, response_formatter, ollama_validator,
+    model_router, performance_tracker,
+)
+command_service     = CommandService(session_service, memory_service)
+chat_controller     = ChatController(ai_service, session_service, memory_service, command_service)
 
 # ─── Create Flask App ─────────────────────────────────────────────────────────
 app = Flask(
@@ -110,7 +124,8 @@ import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)
 
 import routes.system as system_routes
-system_routes.init_app(GPU_INFO, CPU_CORES_LOGICAL, CPU_CORES_PHYSICAL, _BG_WORKERS)
+system_routes.init_app(GPU_INFO, CPU_CORES_LOGICAL, CPU_CORES_PHYSICAL, _BG_WORKERS,
+                       ollama_validator)
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(chat_bp)
@@ -133,8 +148,9 @@ log.info("Hybrid evaluator: ACTIVE | Cache: ACTIVE (TTL=%ds)",
 log.info("Retry: max=%d backoff=%.1fs",
          __import__('config').MAX_RETRY, __import__('config').RETRY_BACKOFF)
 if NOVA_ENV == "production":
-    log.info("Production mode — Ollama Local DISABLED, localhost BLOCKED")
-log.info("All blueprints registered. NOVA v2 ready. ✓")
+    log.info("Production mode - Ollama Local DISABLED, localhost BLOCKED")
+log.info("Adaptive intelligence: ACTIVE (query_analyzer + response_formatter)")
+log.info("All blueprints registered. NOVA v3 ready.")
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ class ChatController:
         self._session.append_message(session_id, "user", user_message)
         history = self._session.get_history(session_id)
 
-        ai_response, active_model, provider = self._ai.generate(
+        ai_response, active_model, provider, metadata = self._ai.generate(
             history, user_message
         )
 
@@ -70,13 +70,19 @@ class ChatController:
         elapsed_ms = int((time.time() - t0) * 1000)
         log.info("Chat complete: %dms provider=%s model=%s", elapsed_ms, provider, active_model)
 
-        return {
+        result = {
             "reply": ai_response,
             "session_id": session_id,
             "model": active_model,
             "provider": provider,
             "time_ms": elapsed_ms,
         }
+
+        # Include debug metadata for transparency
+        if metadata:
+            result["debug"] = metadata
+
+        return result
 
     def handle_chat_stream(self, data: dict, session_id: str) -> Response:
         """
