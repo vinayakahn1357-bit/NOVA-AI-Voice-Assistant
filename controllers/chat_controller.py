@@ -20,15 +20,17 @@ log = get_logger("chat")
 class ChatController:
     """Handles chat request processing and orchestration."""
 
-    def __init__(self, ai_service, session_service, memory_service, command_service):
+    def __init__(self, ai_service, session_service, memory_service, command_service,
+                 agent_engine=None):
         self._ai = ai_service
         self._session = session_service
         self._memory = memory_service
         self._commands = command_service
+        self._agent = agent_engine
 
     def handle_chat(self, data: dict, session_id: str) -> dict:
         """
-        Handle a non-streaming chat request.
+        Handle a non-streaming chat request with agent intelligence.
         Returns: {"reply": str, "session_id": str, "model": str, "provider": str, "time_ms": int}
         """
         t0 = time.time()
@@ -50,12 +52,43 @@ class ChatController:
                 "time_ms": int((time.time() - t0) * 1000),
             }
 
-        # ── Normal conversation ────────────────────────────────────────
+        # -- Agent Intelligence Layer --
+        agent_result = None
+        if self._agent:
+            agent_result = self._agent.process(user_message)
+
+            # Tool mode: return result directly without LLM
+            if agent_result.get("skip_llm") and agent_result.get("tool_result"):
+                tool_response = self._agent.format_tool_response(agent_result["tool_result"])
+                self._session.append_message(session_id, "user", user_message)
+                self._session.append_message(session_id, "nova", tool_response)
+
+                elapsed_ms = int((time.time() - t0) * 1000)
+                return {
+                    "reply": tool_response,
+                    "session_id": session_id,
+                    "model": "nova-agent",
+                    "provider": "internal",
+                    "time_ms": elapsed_ms,
+                    "debug": {
+                        "agent_mode": agent_result["agent_mode"],
+                        "action": agent_result["action"],
+                        "confidence": agent_result["confidence"],
+                        "tool": agent_result["tool_result"].get("tool", ""),
+                    },
+                }
+
+        # ── Normal conversation (with optional agent prompt augmentation) ────────────────────────────────────────
         self._session.append_message(session_id, "user", user_message)
         history = self._session.get_history(session_id)
 
+        # Pass agent prompt augmentation to AI service
+        prompt_augment = ""
+        if agent_result and agent_result.get("prompt_augment"):
+            prompt_augment = agent_result["prompt_augment"]
+
         ai_response, active_model, provider, metadata = self._ai.generate(
-            history, user_message
+            history, user_message, prompt_augment=prompt_augment
         )
 
         # Persist Nova's reply
@@ -81,6 +114,11 @@ class ChatController:
         # Include debug metadata for transparency
         if metadata:
             result["debug"] = metadata
+        if agent_result and agent_result.get("agent_mode") != "normal":
+            result.setdefault("debug", {})
+            result["debug"]["agent_mode"] = agent_result["agent_mode"]
+            result["debug"]["agent_action"] = agent_result["action"]
+            result["debug"]["agent_confidence"] = agent_result["confidence"]
 
         return result
 

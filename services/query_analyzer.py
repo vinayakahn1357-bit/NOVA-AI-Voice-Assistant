@@ -20,6 +20,11 @@ QUERY_TYPES = {
     "math":           {"complexity": 7, "optimal_tokens": 512,  "temperature": 0.3},
     "conversation":   {"complexity": 2, "optimal_tokens": 256,  "temperature": 0.75},
     "complex_task":   {"complexity": 9, "optimal_tokens": 1536, "temperature": 0.5},
+    # Phase 5: Agent modes
+    "decision":       {"complexity": 6, "optimal_tokens": 1024, "temperature": 0.5},
+    "opinion":        {"complexity": 5, "optimal_tokens": 768,  "temperature": 0.7},
+    "planning":       {"complexity": 8, "optimal_tokens": 1536, "temperature": 0.5},
+    "tool_use":       {"complexity": 1, "optimal_tokens": 128,  "temperature": 0.3},
 }
 
 # ─── Pattern Matchers ─────────────────────────────────────────────────────────
@@ -64,6 +69,17 @@ _EXPLANATION_KEYWORDS = frozenset({
     "explain", "what is", "what are", "how to", "define", "describe",
     "meaning of", "tell me about", "overview", "summary", "summarize",
     "introduction", "guide", "tutorial", "walkthrough",
+})
+
+# Phase 5: Agent mode keywords
+_DECISION_KEYWORDS = frozenset({
+    "compare", "versus", "better", "best", "choose", "pick",
+    "recommend", "should", "prefer", "tradeoff", "trade-off",
+})
+
+_OPINION_KEYWORDS = frozenset({
+    "opinion", "suggest", "think", "believe", "advice", "advise",
+    "preference", "recommendation",
 })
 
 

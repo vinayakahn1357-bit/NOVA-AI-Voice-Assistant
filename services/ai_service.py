@@ -208,10 +208,14 @@ class AIService:
 
     # --- Full (Non-Streaming) Generation ---
 
-    def generate(self, history, user_message):
+    def generate(self, history, user_message, prompt_augment=""):
         """
         Generate a full AI response with intelligent routing, performance tracking,
         adaptive intelligence, caching, and timing.
+        Args:
+            history: conversation history
+            user_message: current user message
+            prompt_augment: optional agent-mode prompt instructions
         Returns: (ai_response, active_model, provider, metadata)
         """
         t0 = time.time()
@@ -237,6 +241,15 @@ class AIService:
         # Build prompts (identical for both providers)
         full_prompt = self._prompt.build_ollama_prompt(history)
         groq_messages = self._prompt.build_chat_messages(history)
+
+        # Inject agent-mode prompt augmentation
+        if prompt_augment:
+            full_prompt = full_prompt.replace("Nova:", prompt_augment + "\nNova:")
+            # For Groq: inject as system message before last user message
+            groq_messages.insert(-1, {
+                "role": "system",
+                "content": prompt_augment,
+            })
 
         # Cache check
         if self._cache and provider != "hybrid":

@@ -26,6 +26,14 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 30  # 30 days
 
+# --- Admin Access Control ---
+# Comma-separated list of admin emails
+ADMIN_EMAILS = [
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "vinayakahn1357@gmail.com").split(",")
+    if e.strip()
+]
+
 # ─── Ollama ────────────────────────────────────────────────────────────────────
 # PRODUCTION: Always use cloud URL, never localhost
 if NOVA_ENV == "local":

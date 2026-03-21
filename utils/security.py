@@ -31,7 +31,7 @@ def verify_password(password: str, stored_hash: str, salt: str) -> bool:
     return hmac.compare_digest(candidate, stored_hash)
 
 
-# ─── Login Required Decorator ──────────────────────────────────────────────────
+# --- Login Required Decorator ---
 
 def login_required(f):
     """Decorator: redirects to /login if the user is not authenticated."""
@@ -39,6 +39,34 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if not session.get("user_id"):
             return redirect("/login?next=" + request.path)
+        return f(*args, **kwargs)
+    return decorated
+
+
+# --- Role-Based Access Control ---
+
+def is_admin(user_email=None):
+    """Check if the current session user (or given email) is an admin."""
+    from config import ADMIN_EMAILS
+    email = user_email or session.get("user_email", "")
+    if not email:
+        return False
+    return email.strip().lower() in ADMIN_EMAILS
+
+
+def get_user_role():
+    """Return 'admin' or 'user' based on current session."""
+    return "admin" if is_admin() else "user"
+
+
+def admin_required(f):
+    """Decorator: returns 403 if user is not an admin."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("user_id"):
+            return jsonify({"error": "Authentication required"}), 401
+        if not is_admin():
+            return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
     return decorated
 

@@ -68,6 +68,8 @@ from services.query_analyzer import QueryAnalyzer
 from services.ollama_validator import OllamaValidator
 from services.performance_tracker import PerformanceTracker
 from services.model_router import ModelRouter
+from services.agent_engine import AgentEngine
+from services.tool_executor import ToolExecutor
 from utils.response_formatter import ResponseFormatter
 from controllers.chat_controller import ChatController
 
@@ -82,13 +84,17 @@ response_formatter  = ResponseFormatter()
 ollama_validator    = OllamaValidator()
 performance_tracker = PerformanceTracker()
 model_router        = ModelRouter(performance_tracker)
+tool_executor       = ToolExecutor()
+agent_engine        = AgentEngine(tool_executor)
 ai_service          = AIService(
     prompt_builder, hybrid_evaluator, cache_service,
     query_analyzer, response_formatter, ollama_validator,
     model_router, performance_tracker,
 )
 command_service     = CommandService(session_service, memory_service)
-chat_controller     = ChatController(ai_service, session_service, memory_service, command_service)
+chat_controller     = ChatController(
+    ai_service, session_service, memory_service, command_service, agent_engine
+)
 
 # ─── Create Flask App ─────────────────────────────────────────────────────────
 app = Flask(

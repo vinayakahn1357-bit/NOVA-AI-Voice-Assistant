@@ -129,10 +129,16 @@ def handle_me() -> dict:
     """Return the current authenticated user, or None."""
     if not session.get("user_id"):
         return None
+
+    from utils.security import is_admin, get_user_role
+    email = session.get("user_email", "")
+
     return {
-        "id":    session.get("user_id"),
-        "name":  session.get("user_name"),
-        "email": session.get("user_email"),
+        "id":       session.get("user_id"),
+        "name":     session.get("user_name"),
+        "email":    email,
+        "is_admin": is_admin(email),
+        "role":     get_user_role(),
     }
 
 
