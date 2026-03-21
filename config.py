@@ -1,0 +1,111 @@
+"""
+config.py — Centralised NOVA Configuration
+All environment variables and settings are managed here.
+"""
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ─── Environment Detection ────────────────────────────────────────────────────
+_live_flag = os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes")
+_vercel_flag = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+IS_VERCEL = _vercel_flag
+
+NOVA_ENV = os.getenv("ENV", "production" if (_live_flag or _vercel_flag) else "local")
+NOVA_LIVE_MODE = (NOVA_ENV == "production")
+
+# ─── Paths ─────────────────────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "Frontend")
+
+# ─── Flask ─────────────────────────────────────────────────────────────────────
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "nova-secret-change-me-in-env")
+FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
+FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
+SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 30  # 30 days
+
+# ─── Ollama ────────────────────────────────────────────────────────────────────
+if NOVA_ENV == "local":
+    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+else:
+    OLLAMA_URL = os.getenv("OLLAMA_API_URL",
+                            os.getenv("OLLAMA_CLOUD_URL", "https://api.ollama.com/api/generate"))
+
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# ─── Default Provider ─────────────────────────────────────────────────────────
+_default_provider = os.getenv("NOVA_PROVIDER", "ollama")
+if NOVA_LIVE_MODE and _default_provider == "ollama":
+    _default_provider = "groq" if os.getenv("GROQ_API_KEY") else "ollama_cloud"
+
+# ─── Default System Prompt ─────────────────────────────────────────────────────
+DEFAULT_SYSTEM_PROMPT = (
+    "You are Nova, a highly intelligent, warm, and conversational AI assistant. "
+    "You are like a brilliant friend who explains things clearly, concisely, and naturally — "
+    "similar to how ChatGPT and Gemini converse. You always remember what was said earlier in the "
+    "conversation and build on it naturally. "
+    "Key behaviours:\n"
+    "- Respond in clear, flowing natural language (no robotic lists unless explicitly asked).\n"
+    "- Keep replies concise but complete. Avoid over-explaining.\n"
+    "- If the user greets you, greet back warmly and ask how you can help.\n"
+    "- If asked to help with a task (coding, math, writing, research), do it fully.\n"
+    "- For code, always use properly fenced code blocks with the language name (e.g. ```python).\n"
+    "- Never say you are an Ollama model or reveal underlying technology. You are Nova.\n"
+    "- Speak in a confident, friendly, slightly futuristic tone.\n"
+    "- When you don't know something, say so honestly rather than guessing.\n"
+    "- USE YOUR MEMORY to personalise responses — address the user by name if known, "
+    "reference their interests, and adapt to their preferences.\n"
+)
+
+# ─── Nova Settings (mutable at runtime via /settings) ─────────────────────────
+NOVA_SETTINGS = {
+    "model":                os.getenv("OLLAMA_DEFAULT_MODEL", "mistral"),
+    "temperature":          float(os.getenv("NOVA_TEMPERATURE", "0.75")),
+    "top_p":                float(os.getenv("NOVA_TOP_P", "0.9")),
+    "num_predict":          int(os.getenv("NOVA_MAX_TOKENS", "1024")),
+    "system_prompt":        DEFAULT_SYSTEM_PROMPT,
+    "provider":             _default_provider,
+    "groq_api_key":         os.getenv("GROQ_API_KEY", ""),
+    "groq_model":           os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    "ollama_api_key":       os.getenv("OLLAMA_API_KEY", ""),
+    "ollama_cloud_url":     os.getenv("OLLAMA_CLOUD_URL", "https://api.ollama.com/api/generate"),
+    "hybrid_ollama_model":  os.getenv("NOVA_HYBRID_OLLAMA_MODEL", "mistral"),
+    "hybrid_groq_model":    os.getenv("NOVA_HYBRID_GROQ_MODEL", "llama-3.3-70b-versatile"),
+}
+
+# ─── Session History ───────────────────────────────────────────────────────────
+MAX_HISTORY = int(os.getenv("NOVA_MAX_HISTORY", "30"))
+
+# ─── TTS ───────────────────────────────────────────────────────────────────────
+DEFAULT_TTS_VOICE = os.getenv("TTS_DEFAULT_VOICE", "en-IN-NeerjaExpressiveNeural")
+
+# ─── Google OAuth ──────────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+# ─── Users File ────────────────────────────────────────────────────────────────
+_USERS_FILE_BUNDLED = os.path.join(BASE_DIR, "nova_users.json")
+USERS_FILE = os.path.join("/tmp", "nova_users.json") if IS_VERCEL else _USERS_FILE_BUNDLED
+USERS_FILE_BUNDLED = _USERS_FILE_BUNDLED
+
+# ─── Timeouts ──────────────────────────────────────────────────────────────────
+API_TIMEOUT = 8 if NOVA_ENV == "production" else 30
+LOCAL_TIMEOUT = 120
+
+
+def get_settings():
+    """Return the current mutable settings dict."""
+    return NOVA_SETTINGS
+
+
+def build_provider_config() -> dict:
+    """Snapshot current settings for background memory tasks."""
+    return {
+        "provider":         NOVA_SETTINGS["provider"],
+        "groq_api_key":     NOVA_SETTINGS["groq_api_key"],
+        "groq_model":       NOVA_SETTINGS["groq_model"],
+        "ollama_api_key":   NOVA_SETTINGS["ollama_api_key"],
+        "ollama_cloud_url": NOVA_SETTINGS["ollama_cloud_url"],
+    }
