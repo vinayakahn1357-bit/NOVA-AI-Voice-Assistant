@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify
 
 from utils.logger import get_logger
 from utils.security import chat_rate_limiter
+from utils.errors import NovaValidationError, NovaRateLimitError, NovaProviderError
 
 log = get_logger("routes.chat")
 
@@ -36,10 +37,17 @@ def chat():
         result = _chat_controller.handle_chat(data, session_id)
         return jsonify(result)
 
+    except NovaValidationError as e:
+        return jsonify({"error": e.message, "code": e.code}), 400
+    except NovaRateLimitError as e:
+        return jsonify({"error": e.message, "code": e.code}), 429
+    except NovaProviderError as e:
+        log.error("Provider error: %s", e.message)
+        return jsonify({"error": "AI service temporarily unavailable.", "code": e.code}), 503
     except Exception as e:
         import traceback
         log.error("Chat error: %s\n%s", e, traceback.format_exc())
-        return jsonify({"error": str(e), "code": "UNKNOWN"}), 500
+        return jsonify({"error": "An unexpected error occurred.", "code": "INTERNAL_ERROR"}), 500
 
 
 @chat_bp.route("/chat/stream", methods=["POST"])
@@ -54,10 +62,17 @@ def chat_stream():
 
         return _chat_controller.handle_chat_stream(data, session_id)
 
+    except NovaValidationError as e:
+        return jsonify({"error": e.message, "code": e.code}), 400
+    except NovaRateLimitError as e:
+        return jsonify({"error": e.message, "code": e.code}), 429
+    except NovaProviderError as e:
+        log.error("Provider error (stream): %s", e.message)
+        return jsonify({"error": "AI service temporarily unavailable.", "code": e.code}), 503
     except Exception as e:
         import traceback
         log.error("Chat stream error: %s\n%s", e, traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An unexpected error occurred.", "code": "INTERNAL_ERROR"}), 500
 
 
 @chat_bp.route("/reset", methods=["POST"])

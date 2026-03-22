@@ -1,13 +1,13 @@
 """
 controllers/chat_controller.py — Chat Request Processing for NOVA
-Orchestrates: validate → detect commands → build prompt → call AI → save → return.
-Includes response timing.
+Orchestrates: validate → pipeline (analyze → agent → route → generate → format → sanitize) → save → return.
+Uses ResponsePipeline for clean, modular response flow.
 """
 
 import json
 import time
 
-from flask import Response, stream_with_context
+from flask import Response, stream_with_context, g
 
 from config import get_settings, build_provider_config
 from utils.logger import get_logger
@@ -21,17 +21,18 @@ class ChatController:
     """Handles chat request processing and orchestration."""
 
     def __init__(self, ai_service, session_service, memory_service, command_service,
-                 agent_engine=None):
+                 agent_engine=None, response_pipeline=None):
         self._ai = ai_service
         self._session = session_service
         self._memory = memory_service
         self._commands = command_service
         self._agent = agent_engine
+        self._pipeline = response_pipeline
 
     def handle_chat(self, data: dict, session_id: str) -> dict:
         """
-        Handle a non-streaming chat request with agent intelligence.
-        Returns: {"reply": str, "session_id": str, "model": str, "provider": str, "time_ms": int}
+        Handle a non-streaming chat request via the response pipeline.
+        Returns consistent response format with meta block.
         """
         t0 = time.time()
         user_message = validate_chat_input(data.get("message", ""))
@@ -45,51 +46,39 @@ class ChatController:
             return {
                 "reply": result["response"],
                 "session_id": session_id,
-                "model": "nova-commands",
-                "provider": "internal",
-                "command": intent["command"],
-                "action": result.get("action"),
-                "time_ms": int((time.time() - t0) * 1000),
+                "meta": {
+                    "model": "nova-commands",
+                    "provider": "internal",
+                    "mode": "command",
+                    "latency_ms": int((time.time() - t0) * 1000),
+                    "command": intent["command"],
+                    "action": result.get("action"),
+                },
             }
 
-        # -- Agent Intelligence Layer --
-        agent_result = None
-        if self._agent:
-            agent_result = self._agent.process(user_message)
-
-            # Tool mode: return result directly without LLM
-            if agent_result.get("skip_llm") and agent_result.get("tool_result"):
-                tool_response = self._agent.format_tool_response(agent_result["tool_result"])
-                self._session.append_message(session_id, "user", user_message)
-                self._session.append_message(session_id, "nova", tool_response)
-
-                elapsed_ms = int((time.time() - t0) * 1000)
-                return {
-                    "reply": tool_response,
-                    "session_id": session_id,
-                    "model": "nova-agent",
-                    "provider": "internal",
-                    "time_ms": elapsed_ms,
-                    "debug": {
-                        "agent_mode": agent_result["agent_mode"],
-                        "action": agent_result["action"],
-                        "confidence": agent_result["confidence"],
-                        "tool": agent_result["tool_result"].get("tool", ""),
-                    },
-                }
-
-        # ── Normal conversation (with optional agent prompt augmentation) ────────────────────────────────────────
+        # ── Execute response pipeline ──────────────────────────────────
         self._session.append_message(session_id, "user", user_message)
         history = self._session.get_history(session_id)
 
-        # Pass agent prompt augmentation to AI service
-        prompt_augment = ""
-        if agent_result and agent_result.get("prompt_augment"):
-            prompt_augment = agent_result["prompt_augment"]
+        if self._pipeline:
+            # Use the modular pipeline
+            pipeline_result = self._pipeline.execute(history, user_message)
 
-        ai_response, active_model, provider, metadata = self._ai.generate(
-            history, user_message, prompt_augment=prompt_augment
-        )
+            ai_response = pipeline_result["reply"]
+            active_model = pipeline_result["model"]
+            provider = pipeline_result["provider"]
+            meta = pipeline_result["meta"]
+        else:
+            # Fallback: direct AI call (no pipeline)
+            ai_response, active_model, provider, ai_meta = self._ai.generate(
+                history, user_message
+            )
+            meta = {
+                "model": active_model,
+                "provider": provider,
+                "mode": "normal",
+                "latency_ms": int((time.time() - t0) * 1000),
+            }
 
         # Persist Nova's reply
         self._session.append_message(session_id, "nova", ai_response)
@@ -101,26 +90,23 @@ class ChatController:
         )
 
         elapsed_ms = int((time.time() - t0) * 1000)
+        meta["latency_ms"] = elapsed_ms
+        meta["model"] = active_model
+        meta["provider"] = provider
+
         log.info("Chat complete: %dms provider=%s model=%s", elapsed_ms, provider, active_model)
 
-        result = {
+        # Set model on g for response headers
+        try:
+            g.nova_model = active_model
+        except RuntimeError:
+            pass
+
+        return {
             "reply": ai_response,
             "session_id": session_id,
-            "model": active_model,
-            "provider": provider,
-            "time_ms": elapsed_ms,
+            "meta": meta,
         }
-
-        # Include debug metadata for transparency
-        if metadata:
-            result["debug"] = metadata
-        if agent_result and agent_result.get("agent_mode") != "normal":
-            result.setdefault("debug", {})
-            result["debug"]["agent_mode"] = agent_result["agent_mode"]
-            result["debug"]["agent_action"] = agent_result["action"]
-            result["debug"]["agent_confidence"] = agent_result["confidence"]
-
-        return result
 
     def handle_chat_stream(self, data: dict, session_id: str) -> Response:
         """

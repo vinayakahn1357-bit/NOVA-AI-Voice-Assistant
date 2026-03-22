@@ -71,6 +71,8 @@ from services.model_router import ModelRouter
 from services.agent_engine import AgentEngine
 from services.tool_executor import ToolExecutor
 from utils.response_formatter import ResponseFormatter
+from utils.response_sanitizer import ResponseSanitizer
+from services.response_pipeline import ResponsePipeline
 from controllers.chat_controller import ChatController
 
 # Wire services together
@@ -81,6 +83,7 @@ hybrid_evaluator    = HybridEvaluator()
 cache_service       = CacheService()
 query_analyzer      = QueryAnalyzer()
 response_formatter  = ResponseFormatter()
+response_sanitizer  = ResponseSanitizer()
 ollama_validator    = OllamaValidator()
 performance_tracker = PerformanceTracker()
 model_router        = ModelRouter(performance_tracker)
@@ -92,8 +95,13 @@ ai_service          = AIService(
     model_router, performance_tracker,
 )
 command_service     = CommandService(session_service, memory_service)
+response_pipeline   = ResponsePipeline(
+    ai_service, query_analyzer, agent_engine,
+    response_formatter, response_sanitizer, cache_service,
+)
 chat_controller     = ChatController(
-    ai_service, session_service, memory_service, command_service, agent_engine
+    ai_service, session_service, memory_service, command_service,
+    agent_engine, response_pipeline,
 )
 
 # ─── Create Flask App ─────────────────────────────────────────────────────────
@@ -111,9 +119,12 @@ app.config["PERMANENT_SESSION_LIFETIME"] = SESSION_LIFETIME_SECONDS
 if NOVA_LIVE_MODE:
     app.config["SESSION_COOKIE_SECURE"] = True
 
-# ─── Register Error Handlers & CORS ───────────────────────────────────────────
+# ─── Register Error Handlers, CORS & Middleware ──────────────────────────────
 register_error_handlers(app)
 configure_cors(app)
+
+from utils.middleware import register_middleware
+register_middleware(app)
 
 # ─── Register Blueprints ──────────────────────────────────────────────────────
 from routes.auth import auth_bp
@@ -156,6 +167,9 @@ log.info("Retry: max=%d backoff=%.1fs",
 if NOVA_ENV == "production":
     log.info("Production mode - Ollama Local DISABLED, localhost BLOCKED")
 log.info("Adaptive intelligence: ACTIVE (query_analyzer + response_formatter)")
+log.info("Response pipeline: ACTIVE (analyze -> agent -> route -> generate -> format -> sanitize)")
+log.info("Security sanitizer: ACTIVE")
+log.info("Request middleware: ACTIVE (X-Request-Id + X-Nova-Latency)")
 log.info("All blueprints registered. NOVA v3 ready.")
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
@@ -174,14 +188,15 @@ if __name__ == "__main__":
         print("  ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║")
         print("  ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝")
         print()
-        print(f"  [NOVA v2] Waitress WSGI Server")
-        print(f"  [NOVA v2] http://{host}:{port}")
-        print(f"  [NOVA v2] Open → http://localhost:{port}")
-        print(f"  [NOVA v2] WSGI threads: {wsgi_threads}")
-        print(f"  [NOVA v2] BG workers: {_BG_WORKERS}")
-        print(f"  [NOVA v2] Hybrid evaluator: ACTIVE (parallel)")
-        print(f"  [NOVA v2] Response cache: ACTIVE")
-        print(f"  [NOVA v2] GPU: {'Yes — ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
+        print(f"  [NOVA v3] Waitress WSGI Server")
+        print(f"  [NOVA v3] http://{host}:{port}")
+        print(f"  [NOVA v3] Open -> http://localhost:{port}")
+        print(f"  [NOVA v3] WSGI threads: {wsgi_threads}")
+        print(f"  [NOVA v3] BG workers: {_BG_WORKERS}")
+        print(f"  [NOVA v3] Response pipeline: ACTIVE")
+        print(f"  [NOVA v3] Security sanitizer: ACTIVE")
+        print(f"  [NOVA v3] Response cache: ACTIVE")
+        print(f"  [NOVA v3] GPU: {'Yes -- ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
         print()
         serve(
             app,

@@ -78,7 +78,7 @@ class NovaMemory:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+        self._conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
         self._init_db()
         self._migrate_legacy_json()

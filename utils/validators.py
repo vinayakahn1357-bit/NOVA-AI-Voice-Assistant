@@ -10,17 +10,41 @@ MAX_MESSAGE_LENGTH = 10_000  # characters
 MIN_PASSWORD_LENGTH = 6
 MAX_EMAIL_LENGTH = 254
 
-# Prompt injection detection patterns
+# Prompt injection detection patterns (comprehensive)
 _INJECTION_PATTERNS = [
+    # Classic instruction override
     r"ignore\s+(all\s+)?previous\s+instructions",
     r"ignore\s+(all\s+)?above",
     r"disregard\s+(all\s+)?previous",
+    r"forget\s+(all\s+)?(previous|your|the)\s+(instructions|rules|guidelines)",
+    r"override\s+(your\s+)?(instructions|rules|system|prompt)",
+    # Role manipulation
     r"you\s+are\s+now\s+(a|an)\s+",
+    r"pretend\s+(you are|to be|you're)\s+",
+    r"act\s+as\s+(a|an|if)\s+",
+    r"roleplay\s+as\s+",
+    r"simulate\s+(being|a|an)\s+",
+    # New instruction injection
     r"new\s+instructions?\s*:",
     r"system\s*:\s*",
     r"<\s*system\s*>",
     r"\[INST\]",
     r"\[/INST\]",
+    # DAN / jailbreak patterns
+    r"(?i)\bDAN\b.*(?:mode|prompt|jailbreak)",
+    r"(?i)do\s+anything\s+now",
+    r"(?i)jailbreak",
+    r"(?i)developer\s+mode",
+    r"(?i)unlocked\s+mode",
+    r"(?i)no\s+restrictions?\s+mode",
+    # Prompt extraction
+    r"(?i)(?:show|reveal|display|print|output|repeat|echo)\s+(?:your|the|system)\s+(?:prompt|instructions|rules)",
+    r"(?i)what\s+(?:are|is)\s+your\s+(?:system\s+)?(?:prompt|instructions|rules)",
+    r"(?i)(?:give|tell|share)\s+me\s+your\s+(?:system\s+)?(?:prompt|instructions|rules)",
+    # API / structured injection
+    r'"\s*role\s*"\s*:\s*"\s*system\s*"',
+    r"<\|im_start\|>",
+    r"<\|im_end\|>",
 ]
 _COMPILED_INJECTIONS = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
 
