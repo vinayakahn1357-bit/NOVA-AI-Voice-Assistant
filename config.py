@@ -30,7 +30,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "Frontend")
 
 # ─── Flask ─────────────────────────────────────────────────────────────────────
-FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "nova-secret-change-me-in-env")
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "")
+if not FLASK_SECRET_KEY:
+    import secrets
+    FLASK_SECRET_KEY = secrets.token_hex(32)
+    import logging
+    logging.getLogger("config").warning("FLASK_SECRET_KEY not set — using auto-generated key (sessions won't persist across restarts)")
 FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 30  # 30 days

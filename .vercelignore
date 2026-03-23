@@ -1,0 +1,17 @@
+# Exclude runtime data and unnecessary files from Vercel deployment
+nova_memory.db
+nova_memory.db-shm
+nova_memory.db-wal
+nova_memory.json
+nova_memory.json.migrated
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.git/
+.vscode/
+.idea/
+*.md
+migrate_to_postgres.py

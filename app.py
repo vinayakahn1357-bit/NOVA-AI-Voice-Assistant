@@ -222,6 +222,16 @@ configure_cors(app)
 from utils.middleware import register_middleware
 register_middleware(app)
 
+
+# ─── Favicon Route ────────────────────────────────────────────────────────────
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon to prevent 405 errors."""
+    favicon_path = os.path.join(FRONTEND_DIR, "static", "nova_logo.png")
+    if os.path.exists(favicon_path):
+        return app.send_static_file("nova_logo.png")
+    return '', 204
+
 # ─── Register Blueprints ──────────────────────────────────────────────────────
 from routes.auth import auth_bp
 from routes.chat import chat_bp

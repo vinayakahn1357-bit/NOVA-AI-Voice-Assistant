@@ -22,6 +22,10 @@ nova_memory.json.migrated
 nova_memory.db
 nova_memory.db-shm
 nova_memory.db-wal
+nova_users.json
+
+# ── ML Artifacts ────────────────────────────────
+ml/*.pkl
 
 # ── IDE / OS ────────────────────────────────────
 .vscode/
