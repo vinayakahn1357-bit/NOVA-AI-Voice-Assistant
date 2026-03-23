@@ -1,5 +1,6 @@
 """
 routes/chat.py — Chat Routes Blueprint for NOVA
+Supports both JSON and multipart/form-data (PDF upload).
 """
 
 from flask import Blueprint, request, jsonify
@@ -15,24 +16,95 @@ chat_bp = Blueprint("chat", __name__)
 # Injected services
 _chat_controller = None
 _cache_service = None
+_pdf_service = None
+_ai_service = None
 
 
-def init_app(chat_controller, cache_service=None):
-    """Inject the ChatController and CacheService instances."""
-    global _chat_controller, _cache_service
+def init_app(chat_controller, cache_service=None, pdf_service=None, ai_service=None):
+    """Inject the ChatController, CacheService, PDFService, and AIService instances."""
+    global _chat_controller, _cache_service, _pdf_service, _ai_service
     _chat_controller = chat_controller
     _cache_service = cache_service
+    _pdf_service = pdf_service
+    _ai_service = ai_service
+
+
+def _parse_request_data():
+    """
+    Parse request data from either JSON or multipart/form-data.
+    Returns (data_dict, file_bytes_or_None, filename_or_None).
+    """
+    content_type = request.content_type or ""
+
+    if "multipart/form-data" in content_type:
+        # FormData — message in form field, file in 'file' field
+        message = request.form.get("message", "").strip()
+        session_id = (request.form.get("session_id")
+                      or request.headers.get("X-Session-Id", "default"))
+        data = {"message": message, "session_id": session_id}
+
+        file = request.files.get("file")
+        if file and file.filename:
+            file_bytes = file.read()
+            return data, file_bytes, file.filename
+        return data, None, None
+
+    else:
+        # Standard JSON
+        data = request.get_json() or {}
+        return data, None, None
+
+
+def _process_pdf_context(data: dict, file_bytes: bytes, filename: str) -> dict:
+    """
+    If a PDF file is attached, extract text, summarize, and inject into message.
+    Returns the modified data dict.
+    """
+    if not _pdf_service or not file_bytes:
+        return data
+
+    # Validate
+    error = _pdf_service.validate(file_bytes, filename)
+    if error:
+        raise NovaValidationError(error, code="PDF_INVALID")
+
+    # Extract text
+    text = _pdf_service.extract_text(file_bytes, filename)
+
+    # Summarize for context
+    if _ai_service:
+        context = _pdf_service.summarize_for_context(text, _ai_service, filename)
+    else:
+        # Fallback: use first 3000 chars
+        context = f"[Document: {filename}]\n{text[:3000]}"
+
+    # Inject context into the user's message
+    user_message = data.get("message", "").strip()
+    if not user_message:
+        user_message = "Summarize this document."
+
+    data["message"] = (
+        f"The user uploaded a PDF document. Use the following document content "
+        f"to answer their question.\n\n{context}\n\n"
+        f"User's question: {user_message}"
+    )
+    log.info("PDF context injected: %s (%d chars context)", filename, len(context))
+    return data
 
 
 @chat_bp.route("/chat", methods=["POST"])
 def chat():
     try:
-        data = request.get_json() or {}
+        data, file_bytes, filename = _parse_request_data()
         session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
         chat_rate_limiter.check_or_raise(session_id)
 
-        if not data:
+        if not data.get("message") and not file_bytes:
             return jsonify({"error": "No data provided", "code": "NO_DATA"}), 400
+
+        # Process PDF if attached
+        if file_bytes and filename:
+            data = _process_pdf_context(data, file_bytes, filename)
 
         result = _chat_controller.handle_chat(data, session_id)
         return jsonify(result)
@@ -53,12 +125,16 @@ def chat():
 @chat_bp.route("/chat/stream", methods=["POST"])
 def chat_stream():
     try:
-        data = request.get_json() or {}
+        data, file_bytes, filename = _parse_request_data()
         session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
         chat_rate_limiter.check_or_raise(session_id)
 
-        if not data:
+        if not data.get("message") and not file_bytes:
             return jsonify({"error": "No data provided"}), 400
+
+        # Process PDF if attached
+        if file_bytes and filename:
+            data = _process_pdf_context(data, file_bytes, filename)
 
         return _chat_controller.handle_chat_stream(data, session_id)
 

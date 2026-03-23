@@ -70,6 +70,7 @@ const _isVercelDeploy = window.location.hostname.includes('.vercel.app')
     || window.location.hostname.includes('novaarcai.com');
 let isStreamMode = !_isVercelDeploy; // SSE streaming only on localhost
 let isGenerating = false;     // true while waiting for / receiving a response
+let pendingPdfFile = null;    // File object for PDF upload
 if (_isVercelDeploy) console.log('[NOVA] Vercel detected — using non-streaming mode for reliability');
 
 // ─── Utilities ─────────────────────────────────────────────────────────────────
@@ -540,6 +541,42 @@ function stopGeneration() {
     showToast('Generation stopped', 'info');
 }
 
+// ─── PDF File Handling ────────────────────────────────────────────────────────
+function handlePdfSelect(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+        showToast('Only PDF files are supported', 'error');
+        input.value = '';
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('File too large (max 5MB)', 'error');
+        input.value = '';
+        return;
+    }
+
+    pendingPdfFile = file;
+    const chip = document.getElementById('pdf-file-chip');
+    const nameEl = document.getElementById('pdf-file-name');
+    const btn = document.getElementById('pdf-upload-btn');
+    if (chip) chip.classList.add('visible');
+    if (nameEl) nameEl.textContent = file.name;
+    if (btn) btn.classList.add('has-file');
+    showToast(`PDF attached: ${file.name}`, 'success');
+}
+
+function clearPdfFile() {
+    pendingPdfFile = null;
+    const chip = document.getElementById('pdf-file-chip');
+    const btn = document.getElementById('pdf-upload-btn');
+    const input = document.getElementById('pdf-upload');
+    if (chip) chip.classList.remove('visible');
+    if (btn) btn.classList.remove('has-file');
+    if (input) input.value = '';
+}
+
 // ─── Send Message (Text Mode — Streaming) ────────────────────────────────────
 async function sendMessage() {
     if (isGenerating) return;
@@ -547,11 +584,15 @@ async function sendMessage() {
     const inputField = document.getElementById('user-input');
     const chatBox = document.getElementById('chat-box');
     const message = inputField.value.trim();
-    if (!message) return;
+    if (!message && !pendingPdfFile) return;
 
     stopSpeaking();
     hideWelcomeScreen();
-    appendUserMsg(chatBox, message);
+    // Show user message (include file indicator)
+    const displayMsg = pendingPdfFile
+        ? `📎 ${pendingPdfFile.name}\n${message || 'Summarize this document.'}`
+        : message;
+    appendUserMsg(chatBox, displayMsg);
     inputField.value = '';
     updateCharCounter();
     autoResize(inputField);
@@ -560,7 +601,7 @@ async function sendMessage() {
     setSendState(true);
     const typingDiv = createThinkingBubble(chatBox);
 
-    console.log(`[NOVA sendMessage] isStreamMode=${isStreamMode}, _isVercelDeploy=${_isVercelDeploy}, mode=${isStreamMode ? 'STREAM' : 'FULL'}`);
+    console.log(`[NOVA sendMessage] isStreamMode=${isStreamMode}, hasPdf=${!!pendingPdfFile}`);
 
     try {
         const replyText = isStreamMode
@@ -568,13 +609,14 @@ async function sendMessage() {
             : await sendFull(message, typingDiv, chatBox);
 
         console.log('[NOVA sendMessage] Got reply:', replyText ? replyText.slice(0, 100) : '(empty)');
-        if (replyText) saveToHistory(message, replyText);
+        if (replyText) saveToHistory(displayMsg, replyText);
     } catch (err) {
         console.error('[NOVA sendMessage] CAUGHT ERROR:', err);
         if (typingDiv.parentNode) typingDiv.remove();
         appendErrorBubble(chatBox, err.message);
     } finally {
         setSendState(false);
+        clearPdfFile();
         chatBox.scrollTop = chatBox.scrollHeight;
         inputField.focus();
     }
@@ -654,14 +696,32 @@ async function sendVoiceMessage(message) {
 async function sendFull(message, typingDiv, chatBox) {
     abortController = new AbortController();
     const t0 = performance.now();
-    console.log('[NOVA sendFull] Sending to /chat:', message.slice(0, 80));
+    console.log('[NOVA sendFull] Sending to /chat:', message.slice(0, 80), 'hasPdf:', !!pendingPdfFile);
 
-    const response = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
-        body: JSON.stringify({ message, session_id: novaSessionId }),
-        signal: abortController.signal,
-    });
+    let fetchOptions;
+    if (pendingPdfFile) {
+        // Multipart form data with PDF
+        const formData = new FormData();
+        formData.append('message', message || 'Summarize this document.');
+        formData.append('session_id', novaSessionId);
+        formData.append('file', pendingPdfFile);
+        fetchOptions = {
+            method: 'POST',
+            headers: { 'X-Session-Id': novaSessionId },
+            body: formData,
+            signal: abortController.signal,
+        };
+    } else {
+        // Standard JSON
+        fetchOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
+            body: JSON.stringify({ message, session_id: novaSessionId }),
+            signal: abortController.signal,
+        };
+    }
+
+    const response = await fetch('/chat', fetchOptions);
 
     const elapsed = Math.round(performance.now() - t0);
     console.log(`[NOVA sendFull] Response status: ${response.status} (${elapsed}ms)`);
@@ -700,12 +760,29 @@ async function sendFull(message, typingDiv, chatBox) {
 // ─── Streaming (SSE) fetch ────────────────────────────────────────────────────
 async function sendStream(message, typingDiv, chatBox) {
     abortController = new AbortController();
-    const response = await fetch('/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
-        body: JSON.stringify({ message, session_id: novaSessionId }),
-        signal: abortController.signal,
-    });
+
+    let fetchOptions;
+    if (pendingPdfFile) {
+        const formData = new FormData();
+        formData.append('message', message || 'Summarize this document.');
+        formData.append('session_id', novaSessionId);
+        formData.append('file', pendingPdfFile);
+        fetchOptions = {
+            method: 'POST',
+            headers: { 'X-Session-Id': novaSessionId },
+            body: formData,
+            signal: abortController.signal,
+        };
+    } else {
+        fetchOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
+            body: JSON.stringify({ message, session_id: novaSessionId }),
+            signal: abortController.signal,
+        };
+    }
+
+    const response = await fetch('/chat/stream', fetchOptions);
 
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));

@@ -46,7 +46,36 @@
         #logout-btn { color: rgba(255, 100, 100, 0.6) !important; }
         #logout-btn:hover { color: #ff6b6b !important; background: rgba(255,77,77,0.08) !important; }
 
-        /* ─── Home Profile Avatar ─── */
+        /* ─── PDF Upload ─── */
+        .gc-pdf-btn {
+            background: none; border: none; cursor: pointer;
+            color: rgba(255,255,255,0.45); padding: 8px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; transition: all 0.25s;
+            flex-shrink: 0;
+        }
+        .gc-pdf-btn:hover { color: #00e5ff; background: rgba(0,229,255,0.08); }
+        .gc-pdf-btn.has-file { color: #00e5ff; }
+        .gc-file-chip {
+            display: none; align-items: center; gap: 8px;
+            padding: 6px 14px; margin: 0 8px 6px;
+            border-radius: 20px;
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 0.78rem; color: rgba(255,255,255,0.75);
+            animation: chipIn 0.2s ease-out;
+        }
+        .gc-file-chip.visible { display: inline-flex; }
+        .gc-file-chip svg { flex-shrink: 0; }
+        .gc-file-chip-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gc-file-chip-remove {
+            background: none; border: none; cursor: pointer;
+            color: rgba(255,100,100,0.6); font-size: 14px; padding: 0 2px;
+            line-height: 1; transition: color 0.2s;
+        }
+        .gc-file-chip-remove:hover { color: #ff6b6b; }
+        @keyframes chipIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
         .home-profile-wrap {
             position: absolute;
             top: 22px;
@@ -429,7 +458,24 @@
                         <span class="gc-voice-status voice-status">Tap mic to talk to Nova</span>
                     </div>
 
+                    <!-- PDF file indicator chip -->
+                    <div class="gc-file-chip" id="pdf-file-chip">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span class="gc-file-chip-name" id="pdf-file-name"></span>
+                        <button class="gc-file-chip-remove" onclick="clearPdfFile()" title="Remove file">✕</button>
+                    </div>
+
                     <div class="gc-input-bar" id="search-bar">
+                        <!-- Hidden file input -->
+                        <input type="file" id="pdf-upload" accept=".pdf" style="display:none" onchange="handlePdfSelect(this)">
+
+                        <!-- PDF upload button -->
+                        <button class="gc-pdf-btn" id="pdf-upload-btn" onclick="document.getElementById('pdf-upload').click()" title="Attach PDF">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                            </svg>
+                        </button>
+
                         <!-- Mic button -->
                         <button class="gc-mic-btn voice-btn mic-orb-btn" id="main-mic-btn" title="Voice input">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"

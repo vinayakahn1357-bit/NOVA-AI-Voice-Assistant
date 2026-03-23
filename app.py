@@ -195,8 +195,12 @@ from routes.settings import settings_bp
 from routes.system import system_bp
 
 # Inject dependencies
+from services.pdf_service import PDFService
+pdf_service = PDFService()
+
 import routes.chat as chat_routes
-chat_routes.init_app(chat_controller, cache_service)
+chat_routes.init_app(chat_controller, cache_service,
+                     pdf_service=pdf_service, ai_service=ai_service)
 
 import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)
