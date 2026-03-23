@@ -1,6 +1,7 @@
 """
-services/tool_executor.py - Built-in Tool System for NOVA Agent
+services/tool_executor.py - Built-in Tool System for NOVA Agent (Phase 7)
 Provides lightweight tools the agent can call without external APIs.
+Phase 7: Unified capability registry (tools + plugins as one abstraction).
 """
 
 import re
@@ -149,29 +150,48 @@ def tool_unit_convert(query):
 # --- Tool Executor ---
 
 class ToolExecutor:
-    """Execute registered tools by name."""
+    """
+    Execute registered tools and plugins by name.
+    Phase 6: plugin_manager support.
+    Phase 7: unified capability registry (tools + plugins as "capabilities").
+    """
 
-    @staticmethod
-    def get_tools():
-        """Return list of available tools."""
-        return {
+    def __init__(self, plugin_manager=None):
+        self._plugin_manager = plugin_manager
+
+    def get_tools(self):
+        """Return list of available tools (built-in + plugins)."""
+        tools = {
             name: info["description"]
             for name, info in _TOOLS.items()
         }
+        if self._plugin_manager:
+            for p in self._plugin_manager.list_plugins():
+                tools[p["name"]] = p["description"]
+        return tools
 
-    @staticmethod
-    def execute(tool_name, argument=""):
+    def execute(self, tool_name, argument=""):
         """
         Execute a tool by name.
+        Priority: built-in tools → plugins
         Returns: {"tool": name, "success": bool, "result": ..., "error": ...}
         """
-        if tool_name not in _TOOLS:
-            return {
-                "tool": tool_name,
-                "success": False,
-                "error": "Unknown tool: %s" % tool_name,
-            }
+        # 1. Check built-in tools first
+        if tool_name in _TOOLS:
+            return self._execute_builtin(tool_name, argument)
 
+        # 2. Check plugins
+        if self._plugin_manager and self._plugin_manager.has_plugin(tool_name):
+            return self._execute_plugin(tool_name, argument)
+
+        return {
+            "tool": tool_name,
+            "success": False,
+            "error": "Unknown tool: %s" % tool_name,
+        }
+
+    def _execute_builtin(self, tool_name, argument):
+        """Execute a built-in tool."""
         try:
             output = _TOOLS[tool_name]["fn"](argument)
             success = "error" not in output
@@ -190,6 +210,79 @@ class ToolExecutor:
                 "success": False,
                 "error": str(e),
             }
+
+    def _execute_plugin(self, tool_name, argument):
+        """Execute a plugin tool with response validation."""
+        input_data = {"argument": argument} if isinstance(argument, str) else argument
+
+        response = self._plugin_manager.execute(tool_name, input_data)
+
+        # Validate response shape
+        required_keys = {"success", "result", "error"}
+        if not isinstance(response, dict) or not required_keys.issubset(response.keys()):
+            log.warning("Plugin '%s' returned invalid response: %s", tool_name, response)
+            return {
+                "tool": tool_name,
+                "success": False,
+                "result": None,
+                "error": "Plugin returned invalid response",
+            }
+
+        response["tool"] = tool_name
+        log.info("Plugin executed: %s (success=%s)", tool_name, response.get("success"))
+        return response
+
+    # ── Phase 7: Unified Capability Registry ──────────────────────────────
+
+    def list_capabilities(self) -> list[dict]:
+        """
+        Return a unified list of all capabilities (tools + plugins).
+        Each entry has: name, type ("tool"|"plugin"), description,
+        and optionally category/input_schema/output_schema for plugins.
+        """
+        caps = []
+
+        # Built-in tools
+        for name, info in _TOOLS.items():
+            caps.append({
+                "name": name,
+                "type": "tool",
+                "description": info["description"],
+            })
+
+        # Plugins
+        if self._plugin_manager:
+            for p in self._plugin_manager.list_plugins():
+                entry = {
+                    "name": p["name"],
+                    "type": "plugin",
+                    "description": p.get("description", ""),
+                }
+                if p.get("category"):
+                    entry["category"] = p["category"]
+                if p.get("input_schema"):
+                    entry["input_schema"] = p["input_schema"]
+                if p.get("output_schema"):
+                    entry["output_schema"] = p["output_schema"]
+                caps.append(entry)
+
+        return caps
+
+    def has_capability(self, name: str) -> bool:
+        """Check if a capability (tool or plugin) exists by name."""
+        if name in _TOOLS:
+            return True
+        if self._plugin_manager and self._plugin_manager.has_plugin(name):
+            return True
+        return False
+
+    def execute_capability(self, name: str, input_data=None) -> dict:
+        """
+        Execute any capability (tool or plugin) by name.
+        Unified interface over execute().
+        """
+        argument = input_data if input_data is not None else ""
+        return self.execute(name, argument)
 
     @staticmethod
     def detect_tool(message):

@@ -8,6 +8,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ─── Phase 6: Scalable Architecture Config ────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL", "")          # Empty = SQLite fallback
+REDIS_URL = os.getenv("REDIS_URL", "")                # Empty = in-memory fallback
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")       # Empty = JWT disabled
+JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")       # Empty = no encryption (plaintext)
+LOG_FORMAT = os.getenv("LOG_FORMAT", "text")            # "json" for production, "text" for local
+TASK_QUEUE_WORKERS = int(os.getenv("TASK_QUEUE_WORKERS", "0"))  # 0 = auto-detect
+
 # ─── Environment Detection ────────────────────────────────────────────────────
 _live_flag = os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes")
 _vercel_flag = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))

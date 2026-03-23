@@ -1,6 +1,8 @@
 """
-app.py — NOVA AI Assistant — Application Factory (v2)
-Thin entry point wiring all modules, including hybrid evaluator and cache.
+app.py — NOVA AI Assistant — Application Factory (Phase 7)
+Thin entry point wiring all modules.
+Phase 6: PostgreSQL, Redis, TaskQueue, Plugin System, JWT, Structured Logging.
+Phase 7: Autonomous AgentRunner, WorkflowEngine, Unified Capabilities.
 """
 
 import os
@@ -12,7 +14,7 @@ from flask import Flask
 
 from config import (
     BASE_DIR, FRONTEND_DIR, FLASK_SECRET_KEY, SESSION_LIFETIME_SECONDS,
-    NOVA_ENV, NOVA_LIVE_MODE, OLLAMA_URL,
+    NOVA_ENV, NOVA_LIVE_MODE, OLLAMA_URL, DATABASE_URL, REDIS_URL,
 )
 from utils.logger import get_logger
 from utils.errors import register_error_handlers
@@ -52,6 +54,45 @@ GPU_INFO = _detect_gpu()
 _BG_WORKERS = max(4, CPU_CORES_PHYSICAL * 2)
 bg_pool = ThreadPoolExecutor(max_workers=_BG_WORKERS, thread_name_prefix='nova-bg')
 
+# ─── Phase 6: Database Initialization ─────────────────────────────────────────
+from database import init_db, is_postgres
+
+try:
+    init_db()
+    _db_type = "PostgreSQL" if is_postgres() else "SQLite"
+    log.info("Phase 6 — Database: %s", _db_type)
+except Exception as e:
+    log.warning("Phase 6 — Database init failed: %s (falling back to legacy)", e)
+    _db_type = "SQLite (fallback)"
+
+# ─── Phase 6: Redis Initialization ────────────────────────────────────────────
+from services.redis_service import RedisService
+
+redis_service = RedisService(redis_url=REDIS_URL)
+log.info("Phase 6 — Redis: %s", "connected" if redis_service.is_available else "disabled")
+
+# ─── Phase 6: Task Queue ──────────────────────────────────────────────────────
+from services.task_queue import TaskQueue
+
+task_queue = TaskQueue()
+log.info("Phase 6 — TaskQueue: %d workers", task_queue._max_workers)
+
+# ─── Phase 6: Plugin Manager ─────────────────────────────────────────────────
+from services.plugin_manager import PluginManager
+
+_plugins_dir = os.path.join(BASE_DIR, "plugins")
+plugin_manager = PluginManager(plugins_dir=_plugins_dir if os.path.isdir(_plugins_dir) else None)
+
+# ─── Phase 6: DbMemoryService (optional PostgreSQL backend) ──────────────────
+db_memory = None
+if is_postgres():
+    try:
+        from services.db_memory_service import DbMemoryService
+        db_memory = DbMemoryService()
+        log.info("Phase 6 — DbMemoryService: active (PostgreSQL)")
+    except Exception as e:
+        log.warning("Phase 6 — DbMemoryService init failed: %s", e)
+
 # ─── Initialise Core Services ─────────────────────────────────────────────────
 from nova_memory import NovaMemory
 
@@ -75,19 +116,19 @@ from utils.response_sanitizer import ResponseSanitizer
 from services.response_pipeline import ResponsePipeline
 from controllers.chat_controller import ChatController
 
-# Wire services together
-memory_service      = MemoryService(memory_engine, bg_pool)
+# Wire services together (Phase 6: inject Redis, DbMemory, PluginManager)
+memory_service      = MemoryService(memory_engine, bg_pool, db_memory=db_memory)
 session_service     = SessionService(memory_engine._conn)
 prompt_builder      = PromptBuilder(memory_service)
 hybrid_evaluator    = HybridEvaluator()
-cache_service       = CacheService()
+cache_service       = CacheService(redis_service=redis_service)
 query_analyzer      = QueryAnalyzer()
 response_formatter  = ResponseFormatter()
 response_sanitizer  = ResponseSanitizer()
 ollama_validator    = OllamaValidator()
 performance_tracker = PerformanceTracker()
 model_router        = ModelRouter(performance_tracker)
-tool_executor       = ToolExecutor()
+tool_executor       = ToolExecutor(plugin_manager=plugin_manager)
 agent_engine        = AgentEngine(tool_executor)
 ai_service          = AIService(
     prompt_builder, hybrid_evaluator, cache_service,
@@ -99,10 +140,30 @@ response_pipeline   = ResponsePipeline(
     ai_service, query_analyzer, agent_engine,
     response_formatter, response_sanitizer, cache_service,
 )
+
+# ─── Phase 7: Autonomous Agent & Workflow Engine ──────────────────────────────
+from services.agent_runner import AgentRunner
+from services.workflow_engine import WorkflowEngine
+
+agent_runner     = AgentRunner(ai_service, tool_executor, memory_service)
+workflow_engine  = WorkflowEngine(ai_service, tool_executor)
+
+log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=%d)", 7)
+log.info("Phase 7 — WorkflowEngine: ACTIVE")
+
 chat_controller     = ChatController(
     ai_service, session_service, memory_service, command_service,
     agent_engine, response_pipeline,
+    agent_runner=agent_runner,
 )
+
+# ─── Phase 6: Update Rate Limiters with Redis ─────────────────────────────────
+from utils.security import chat_rate_limiter, auth_rate_limiter
+
+if redis_service.is_available:
+    chat_rate_limiter.update_redis(redis_service)
+    auth_rate_limiter.update_redis(redis_service)
+    log.info("Phase 6 — Rate limiters: Redis-backed")
 
 # ─── Create Flask App ─────────────────────────────────────────────────────────
 app = Flask(
@@ -160,8 +221,9 @@ log.info("BG pool: %d workers", _BG_WORKERS)
 log.info("ENV: %s | Provider: %s", NOVA_ENV, ai_service._resolve_provider(
     __import__('config').get_settings()['provider']
 ))
-log.info("Hybrid evaluator: ACTIVE | Cache: ACTIVE (TTL=%ds)",
-         __import__('config').CACHE_TTL)
+log.info("Hybrid evaluator: ACTIVE | Cache: ACTIVE (TTL=%ds, backend=%s)",
+         __import__('config').CACHE_TTL,
+         "Redis" if redis_service.is_available else "in-memory")
 log.info("Retry: max=%d backoff=%.1fs",
          __import__('config').MAX_RETRY, __import__('config').RETRY_BACKOFF)
 if NOVA_ENV == "production":
@@ -170,7 +232,24 @@ log.info("Adaptive intelligence: ACTIVE (query_analyzer + response_formatter)")
 log.info("Response pipeline: ACTIVE (analyze -> agent -> route -> generate -> format -> sanitize)")
 log.info("Security sanitizer: ACTIVE")
 log.info("Request middleware: ACTIVE (X-Request-Id + X-Nova-Latency)")
-log.info("All blueprints registered. NOVA v3 ready.")
+
+# Phase 6+7 summary
+log.info("═══════════════════════════════════════════════════════")
+log.info("Phase 6 Scalable Architecture:")
+log.info("  Database:     %s", _db_type)
+log.info("  Redis:        %s", "connected" if redis_service.is_available else "disabled (in-memory fallback)")
+log.info("  Task Queue:   %d workers", task_queue._max_workers)
+log.info("  Plugins:      %d loaded", len(plugin_manager.list_plugins()))
+log.info("  Cache:        %s", "Redis" if cache_service._use_redis else "in-memory LRU")
+log.info("  JWT Auth:     %s", "enabled" if os.getenv("JWT_SECRET_KEY") else "disabled (session-only)")
+log.info("  Encryption:   %s", "enabled" if os.getenv("ENCRYPTION_KEY") else "disabled (plaintext)")
+log.info("  Log Format:   %s", os.getenv("LOG_FORMAT", "text"))
+log.info("Phase 7 AI OS:")
+log.info("  AgentRunner:  ACTIVE (max_steps=7, tools=%d)", len(tool_executor.get_tools()))
+log.info("  Workflows:    ACTIVE")
+log.info("  Capabilities: %d (tools + plugins)", len(tool_executor.list_capabilities()))
+log.info("═══════════════════════════════════════════════════════")
+log.info("All blueprints registered. NOVA v5 (Phase 7) ready.")
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
@@ -188,16 +267,18 @@ if __name__ == "__main__":
         print("  ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║")
         print("  ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝")
         print()
-        print(f"  [NOVA v3] Waitress WSGI Server")
-        print(f"  [NOVA v3] http://{host}:{port}")
-        print(f"  [NOVA v3] Open -> http://localhost:{port}")
-        print(f"  [NOVA v3] WSGI threads: {wsgi_threads}")
-        print(f"  [NOVA v3] BG workers: {_BG_WORKERS}")
-        print(f"  [NOVA v3] Response pipeline: ACTIVE")
-        print(f"  [NOVA v3] Security sanitizer: ACTIVE")
-        print(f"  [NOVA v3] Response cache: ACTIVE")
-        print(f"  [NOVA v3] GPU: {'Yes -- ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
-        print()
+        print(f"  [NOVA v5] Waitress WSGI Server — Phase 7 Active")
+        print(f"  [NOVA v5] http://{host}:{port}")
+        print(f"  [NOVA v5] Open -> http://localhost:{port}")
+        print(f"  [NOVA v5] WSGI threads: {wsgi_threads}")
+        print(f"  [NOVA v5] BG workers: {_BG_WORKERS}")
+        print(f"  [NOVA v5] Database: {_db_type}")
+        print(f"  [NOVA v5] Redis: {'connected' if redis_service.is_available else 'disabled'}")
+        print(f"  [NOVA v5] AgentRunner: ACTIVE")
+        print(f"  [NOVA v5] WorkflowEngine: ACTIVE")
+        print(f"  [NOVA v5] Capabilities: {len(tool_executor.list_capabilities())}")
+        print(f"  [NOVA v5] Plugins: {len(plugin_manager.list_plugins())} loaded")
+        print(f"  [NOVA v5] GPU: {'Yes -- ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
         serve(
             app,
             host=host,
