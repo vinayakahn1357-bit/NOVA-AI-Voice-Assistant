@@ -1,6 +1,7 @@
 """
 routes/chat.py — Chat Routes Blueprint for NOVA
 Supports both JSON and multipart/form-data (PDF upload).
+Phase 8: Persistent document context for multi-turn PDF Q&A.
 """
 
 from flask import Blueprint, request, jsonify
@@ -18,15 +19,19 @@ _chat_controller = None
 _cache_service = None
 _pdf_service = None
 _ai_service = None
+_document_store = None
 
 
-def init_app(chat_controller, cache_service=None, pdf_service=None, ai_service=None):
-    """Inject the ChatController, CacheService, PDFService, and AIService instances."""
-    global _chat_controller, _cache_service, _pdf_service, _ai_service
+def init_app(chat_controller, cache_service=None, pdf_service=None,
+             ai_service=None, document_store=None):
+    """Inject the ChatController, CacheService, PDFService, AIService,
+    and DocumentContextStore instances."""
+    global _chat_controller, _cache_service, _pdf_service, _ai_service, _document_store
     _chat_controller = chat_controller
     _cache_service = cache_service
     _pdf_service = pdf_service
     _ai_service = ai_service
+    _document_store = document_store
 
 
 def _parse_request_data():
@@ -55,9 +60,11 @@ def _parse_request_data():
         return data, None, None
 
 
-def _process_pdf_context(data: dict, file_bytes: bytes, filename: str) -> dict:
+def _process_pdf_context(data: dict, file_bytes: bytes, filename: str,
+                         session_id: str) -> dict:
     """
-    If a PDF file is attached, extract text, summarize, and inject into message.
+    If a PDF file is attached, extract text, summarize, inject into message,
+    and persist the context in DocumentContextStore for follow-up questions.
     Returns the modified data dict.
     """
     if not _pdf_service or not file_bytes:
@@ -71,12 +78,21 @@ def _process_pdf_context(data: dict, file_bytes: bytes, filename: str) -> dict:
     # Extract text
     text = _pdf_service.extract_text(file_bytes, filename)
 
+    # Chunk the text
+    chunks = _pdf_service.chunk_text(text)
+
     # Summarize for context
     if _ai_service:
         context = _pdf_service.summarize_for_context(text, _ai_service, filename)
     else:
         # Fallback: use first 3000 chars
         context = f"[Document: {filename}]\n{text[:3000]}"
+
+    # ── Phase 8: Store document context for follow-up questions ────────
+    if _document_store:
+        _document_store.set(session_id, filename, context, chunks)
+        log.info("Document context persisted for session %s: '%s'",
+                 session_id, filename)
 
     # Inject context into the user's message
     user_message = data.get("message", "").strip()
@@ -104,7 +120,7 @@ def chat():
 
         # Process PDF if attached
         if file_bytes and filename:
-            data = _process_pdf_context(data, file_bytes, filename)
+            data = _process_pdf_context(data, file_bytes, filename, session_id)
 
         result = _chat_controller.handle_chat(data, session_id)
         return jsonify(result)
@@ -134,7 +150,7 @@ def chat_stream():
 
         # Process PDF if attached
         if file_bytes and filename:
-            data = _process_pdf_context(data, file_bytes, filename)
+            data = _process_pdf_context(data, file_bytes, filename, session_id)
 
         return _chat_controller.handle_chat_stream(data, session_id)
 
@@ -158,6 +174,33 @@ def reset_conversation():
     result = _chat_controller.handle_reset(session_id)
     return jsonify(result)
 
+
+# ── Phase 8: Document Context Endpoints ───────────────────────────────────────
+
+@chat_bp.route("/document/status", methods=["GET"])
+def document_status():
+    """Return the active document status for the current session."""
+    session_id = request.headers.get("X-Session-Id", "default")
+    if _document_store:
+        return jsonify(_document_store.get_status(session_id))
+    return jsonify({"has_document": False, "filename": None})
+
+
+@chat_bp.route("/document/clear", methods=["POST"])
+def document_clear():
+    """Clear the active document context for the current session."""
+    data = request.get_json() or {}
+    session_id = (data.get("session_id")
+                  or request.headers.get("X-Session-Id", "default"))
+    if _document_store:
+        removed = _document_store.clear(session_id)
+        if removed:
+            return jsonify({"status": "ok", "message": "Document context cleared."})
+        return jsonify({"status": "ok", "message": "No active document."})
+    return jsonify({"status": "ok", "message": "Document store not configured."})
+
+
+# ── Cache Endpoints ───────────────────────────────────────────────────────────
 
 @chat_bp.route("/chat/cache/clear", methods=["POST"])
 def clear_cache():

@@ -151,10 +151,17 @@ workflow_engine  = WorkflowEngine(ai_service, tool_executor)
 log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=%d)", 7)
 log.info("Phase 7 — WorkflowEngine: ACTIVE")
 
+# ─── Phase 8: Document Context Store ──────────────────────────────────────────
+from services.document_context import DocumentContextStore
+
+document_store = DocumentContextStore()
+log.info("Phase 8 — DocumentContextStore: ACTIVE")
+
 chat_controller     = ChatController(
     ai_service, session_service, memory_service, command_service,
     agent_engine, response_pipeline,
     agent_runner=agent_runner,
+    document_store=document_store,
 )
 
 # ─── Phase 6: Update Rate Limiters with Redis ─────────────────────────────────
@@ -200,7 +207,8 @@ pdf_service = PDFService()
 
 import routes.chat as chat_routes
 chat_routes.init_app(chat_controller, cache_service,
-                     pdf_service=pdf_service, ai_service=ai_service)
+                     pdf_service=pdf_service, ai_service=ai_service,
+                     document_store=document_store)
 
 import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)

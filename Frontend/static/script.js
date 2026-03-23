@@ -418,6 +418,7 @@ function startNewConversation() {
     if (chatBox) chatBox.innerHTML = '';
     showWelcomeScreen();
     stopSpeaking();
+    hideActiveDocBar();  // Phase 8: clear document indicator
     fetch('/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -577,6 +578,59 @@ function clearPdfFile() {
     if (input) input.value = '';
 }
 
+// ─── Active Document Bar (Phase 8: Persistent Document Context) ────────────────
+function showActiveDocBar(filename) {
+    const bar = document.getElementById('active-doc-bar');
+    const nameEl = document.getElementById('active-doc-name');
+    if (bar && nameEl) {
+        nameEl.textContent = filename;
+        bar.classList.add('visible');
+    }
+    console.log('[NOVA] Active document set:', filename);
+}
+
+function hideActiveDocBar() {
+    const bar = document.getElementById('active-doc-bar');
+    if (bar) bar.classList.remove('visible');
+}
+
+async function clearActiveDocument() {
+    try {
+        await fetch('/document/clear', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': novaSessionId
+            },
+            body: JSON.stringify({ session_id: novaSessionId })
+        });
+        hideActiveDocBar();
+        showToast('Document context cleared', 'info');
+        console.log('[NOVA] Document context cleared');
+    } catch (err) {
+        console.error('[NOVA] Failed to clear document:', err);
+        showToast('Failed to clear document', 'error');
+    }
+}
+
+async function checkDocumentStatus() {
+    try {
+        const res = await fetch('/document/status', {
+            headers: { 'X-Session-Id': novaSessionId }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.has_document && data.filename) {
+                showActiveDocBar(data.filename);
+            } else {
+                hideActiveDocBar();
+            }
+        }
+    } catch (err) {
+        console.log('[NOVA] Document status check failed (server may be offline)');
+    }
+}
+
 // ─── Send Message (Text Mode — Streaming) ────────────────────────────────────
 async function sendMessage() {
     if (isGenerating) return;
@@ -616,6 +670,10 @@ async function sendMessage() {
         appendErrorBubble(chatBox, err.message);
     } finally {
         setSendState(false);
+        // If a PDF was uploaded, show the active doc indicator
+        if (pendingPdfFile) {
+            showActiveDocBar(pendingPdfFile.name);
+        }
         clearPdfFile();
         chatBox.scrollTop = chatBox.scrollHeight;
         inputField.focus();
@@ -732,6 +790,13 @@ async function sendFull(message, typingDiv, chatBox) {
         console.log('[NOVA sendFull] Response data:', JSON.stringify(data).slice(0, 300));
         replyText = data.reply || replyText;
         updateModelBadge(data.model);
+        // Phase 8: Handle document context signals
+        if (data.meta && data.meta.mode === 'document_clear') {
+            hideActiveDocBar();
+        }
+        if (data.meta && data.meta.active_document) {
+            showActiveDocBar(data.meta.active_document);
+        }
     } else {
         let errBody = '';
         try {
@@ -2983,8 +3048,11 @@ async function novaLogout() {
     window.location.href = '/login';
 }
 
-// Load user info when DOM is ready
-document.addEventListener('DOMContentLoaded', novaLoadUser);
+// Load user info and check document status when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    novaLoadUser();
+    checkDocumentStatus();  // Phase 8: restore active document indicator
+});
 
 // ─── Profile Dropdown Toggle ─────────────────────────────────────────────────
 function toggleProfileDropdown() {
