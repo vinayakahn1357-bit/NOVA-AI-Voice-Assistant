@@ -34,7 +34,10 @@
     },
     {
       "src": "/(.*)",
-      "dest": "app.py"
+      "dest": "app.py",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
     }
   ],
   "functions": {
