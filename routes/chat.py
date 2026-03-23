@@ -2,6 +2,7 @@
 routes/chat.py — Chat Routes Blueprint for NOVA
 Supports both JSON and multipart/form-data (PDF upload).
 Phase 8: Persistent document context for multi-turn PDF Q&A.
+Phase 9: Per-session personality API endpoints.
 """
 
 from flask import Blueprint, request, jsonify
@@ -20,18 +21,21 @@ _cache_service = None
 _pdf_service = None
 _ai_service = None
 _document_store = None
+_personality_store = None
 
 
 def init_app(chat_controller, cache_service=None, pdf_service=None,
-             ai_service=None, document_store=None):
+             ai_service=None, document_store=None, personality_store=None):
     """Inject the ChatController, CacheService, PDFService, AIService,
-    and DocumentContextStore instances."""
-    global _chat_controller, _cache_service, _pdf_service, _ai_service, _document_store
+    DocumentContextStore, and PersonalityStore instances."""
+    global _chat_controller, _cache_service, _pdf_service, _ai_service
+    global _document_store, _personality_store
     _chat_controller = chat_controller
     _cache_service = cache_service
     _pdf_service = pdf_service
     _ai_service = ai_service
     _document_store = document_store
+    _personality_store = personality_store
 
 
 def _parse_request_data():
@@ -217,3 +221,48 @@ def cache_stats():
     if _cache_service:
         return jsonify(_cache_service.stats())
     return jsonify({"entries": 0, "message": "No cache configured."})
+
+
+# ── Phase 9: Personality Endpoints ──────────────────────────────────────────
+
+@chat_bp.route("/settings/personality", methods=["GET"])
+def get_personality():
+    """Return the current personality and available options."""
+    session_id = request.headers.get("X-Session-Id", "default")
+    if _personality_store:
+        from services.personality_service import PersonalityStore
+        return jsonify({
+            "current": _personality_store.get(session_id),
+            "info": _personality_store.get_info(session_id),
+            "available": _personality_store.list_all(),
+        })
+    return jsonify({"current": "default", "available": {}})
+
+
+@chat_bp.route("/settings/personality", methods=["POST"])
+def set_personality():
+    """Set the personality for the current session."""
+    data = request.get_json() or {}
+    personality = data.get("personality", "").strip().lower()
+    session_id = (data.get("session_id")
+                  or request.headers.get("X-Session-Id", "default"))
+
+    if not personality:
+        return jsonify({"error": "Missing 'personality' field."}), 400
+
+    if not _personality_store:
+        return jsonify({"error": "Personality system not configured."}), 503
+
+    from services.personality_service import VALID_PERSONALITIES
+    if personality not in VALID_PERSONALITIES:
+        return jsonify({
+            "error": f"Invalid personality '{personality}'.",
+            "valid": sorted(VALID_PERSONALITIES),
+        }), 400
+
+    _personality_store.set(session_id, personality)
+    return jsonify({
+        "status": "ok",
+        "personality": personality,
+        "info": _personality_store.get_info(session_id),
+    })

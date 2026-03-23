@@ -4962,7 +4962,7 @@ body {
 /* ─── INFO CARDS ROW ──────────────────────────────────────────────────── */
 .home-cards-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px;
     width: 100%;
     max-width: 1200px;
@@ -5297,6 +5297,9 @@ body {
     font-size: 0.85rem;
     color: #fff;
     transition: all 0.2s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .task-cb:checked+.checkmark+.task-text,
@@ -5564,6 +5567,122 @@ body {
     cursor: pointer;
     flex-shrink: 0;
     transition: all 0.2s;
+}
+
+/* ─── HOME / WELCOME SCREEN ────────────────────────────────────────────── */
+.gc-welcome {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 24px;
+    padding-bottom: 80px;
+    animation: fadeIn 0.8s ease-out forwards;
+}
+
+.gc-welcome-card {
+    background: rgba(15, 20, 32, 0.45);
+    border: 1px solid rgba(0, 229, 255, 0.15);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 3.5rem 4rem;
+    border-radius: 24px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.05);
+    max-width: 800px;
+    width: 100%;
+}
+
+.gc-welcome-orb {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 24px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gc-orb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 50%;
+    position: relative;
+    z-index: 2;
+    animation: floatOrb 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 15px rgba(0, 229, 255, 0.4));
+}
+
+@keyframes floatOrb {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); filter: drop-shadow(0 0 25px rgba(0, 229, 255, 0.7)); }
+}
+
+.gc-welcome-title {
+    font-size: 2.8rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 12px;
+    letter-spacing: -0.5px;
+    text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.gc-name-highlight {
+    background: linear-gradient(135deg, #00e5ff, #bc60d3);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.4));
+}
+
+.gc-welcome-sub {
+    font-size: 1.1rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 40px;
+    max-width: 600px;
+    margin-inline: auto;
+    letter-spacing: 0.2px;
+    line-height: 1.5;
+}
+
+.gc-chips {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    width: 100%;
+}
+
+.gc-chip {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 16px 20px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.gc-chip:hover {
+    background: rgba(0, 229, 255, 0.08);
+    border-color: rgba(0, 229, 255, 0.3);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 229, 255, 0.15);
+}
+
+.gc-chip-icon {
+    font-size: 1.4rem;
+    background: rgba(0, 229, 255, 0.1);
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 229, 255, 0.2);
 }
 
 .gc-new-chat:hover {

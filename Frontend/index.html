@@ -119,7 +119,72 @@
         }
         .gc-file-chip-remove:hover { color: #ff6b6b; }
         @keyframes chipIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
+
+        /* ─── Phase 9: Personality Cards ─── */
+        .personality-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+        @media (max-width: 600px) {
+            .personality-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        .personality-card {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 12px 6px; gap: 4px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-align: center;
+        }
+        .personality-card:hover {
+            background: rgba(0, 229, 255, 0.06);
+            border-color: rgba(0, 229, 255, 0.25);
+            transform: translateY(-2px);
+        }
+        .personality-card.active {
+            background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(188,96,211,0.08));
+            border-color: rgba(0, 229, 255, 0.4);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.12);
+        }
+        .pers-emoji { font-size: 1.5rem; line-height: 1; }
+        .pers-name {
+            font-size: 0.72rem; font-weight: 600;
+            color: rgba(255,255,255,0.85);
+            letter-spacing: 0.3px;
+        }
+        .pers-desc {
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.35);
+            line-height: 1.2;
+        }
+        .personality-card.active .pers-name { color: #00e5ff; }
+        .personality-card.active .pers-desc { color: rgba(0,229,255,0.6); }
+        .pers-active-row {
+            display: flex; align-items: center;
+            margin-top: 8px; gap: 8px;
+        }
+        .pers-active-label {
+            font-size: 0.7rem; color: rgba(255,255,255,0.4);
+        }
+        .pers-active-label strong { color: #00e5ff; }
+
+        /* ─── Mic Dictation State ─── */
+        .gc-mic-btn.dictating {
+            color: #ff4444 !important;
+            animation: micPulse 1s ease-in-out infinite;
+            box-shadow: 0 0 16px rgba(255, 68, 68, 0.3);
+        }
+        @keyframes micPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.8; }
+        }
+
+        /* ─── Home Profile ─── */
         .home-profile-wrap {
             position: absolute;
             top: 22px;
@@ -471,23 +536,31 @@
 
                 <!-- Welcome Screen -->
                 <div id="welcome-screen" class="gc-welcome">
-                    <div class="gc-welcome-orb">
-                        <div class="gc-orb-ring"></div>
-                        <img src="/static/nova_logo.png" alt="NOVA" class="gc-orb-img">
-                    </div>
-                    <h1 class="gc-welcome-title">Hello, I'm <span class="gc-name-highlight">Nova</span></h1>
-                    <p class="gc-welcome-sub">Your personal AI assistant. How can I help you today?</p>
-                    <div class="gc-chips">
-                        <button class="gc-chip" onclick="useChip('Explain quantum computing simply')">⚛️ Quantum
-                            computing</button>
-                        <button class="gc-chip"
-                            onclick="useChip('Write a Python function to sort a list of dictionaries by a key')">🐍
-                            Python help</button>
-                        <button class="gc-chip"
-                            onclick="useChip('What are the best productivity tips for deep work?')">💡 Productivity
-                            tips</button>
-                        <button class="gc-chip" onclick="useChip('Write a short poem about artificial intelligence')">✏️
-                            Write a poem</button>
+                    <div class="gc-welcome-card">
+                        <div class="gc-welcome-orb">
+                            <img src="/static/nova_logo.png" alt="NOVA" class="gc-orb-img">
+                        </div>
+                        <h1 class="gc-welcome-title">Hello, I'm <span class="gc-name-highlight">Nova</span></h1>
+                        <p class="gc-welcome-sub">I'm an advanced AI assistant equipped with persistent memory, full agentic reasoning, direct tool execution, and document analysis. Let's get started.</p>
+                        
+                        <div class="gc-chips">
+                            <button class="gc-chip" onclick="useChip('Search the web for the latest news on AI breakthroughs')">
+                                <div class="gc-chip-icon">🌐</div>
+                                <span>Search the web for the latest news on AI</span>
+                            </button>
+                            <button class="gc-chip" onclick="useChip('Analyze my uploaded PDF and extract the key insights')">
+                                <div class="gc-chip-icon">📄</div>
+                                <span>Process uploaded PDFs and extract insights</span>
+                            </button>
+                            <button class="gc-chip" onclick="useChip('Think step-by-step: How would you design a scalable database?')">
+                                <div class="gc-chip-icon">🧠</div>
+                                <span>Use Agent Reasoning for complex problems</span>
+                            </button>
+                            <button class="gc-chip" onclick="useChip('Explain this to me like a close friend')">
+                                <div class="gc-chip-icon">🗣️</div>
+                                <span>Adapt response style via Smart Personality</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -528,8 +601,15 @@
                             </svg>
                         </button>
 
-                        <!-- Mic button -->
-                        <button class="gc-mic-btn voice-btn mic-orb-btn" id="main-mic-btn" title="Voice input">
+                        <!-- Text input -->
+                        <textarea id="user-input" class="gc-textarea" placeholder="Ask Nova anything…"
+                            autocomplete="off" rows="1"></textarea>
+
+                        <!-- Char counter -->
+                        <span class="char-counter" id="char-counter"></span>
+
+                        <!-- Mic button (speech-to-text dictation) -->
+                        <button class="gc-mic-btn" id="main-mic-btn" onclick="handleDictation()" title="Voice to text">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
                                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
@@ -538,13 +618,6 @@
                                 <line x1="8" y1="23" x2="16" y2="23" />
                             </svg>
                         </button>
-
-                        <!-- Text input -->
-                        <textarea id="user-input" class="gc-textarea" placeholder="Ask Nova anything…"
-                            autocomplete="off" rows="1"></textarea>
-
-                        <!-- Char counter -->
-                        <span class="char-counter" id="char-counter"></span>
 
                         <!-- Send button -->
                         <button onclick="sendMessage()" class="gc-send-btn" id="send-btn" title="Send (Enter)">
@@ -1087,6 +1160,41 @@
                     <label class="settings-label">System Prompt</label>
                     <textarea id="settings-system-prompt" class="settings-textarea"
                         placeholder="Describe Nova's personality?" rows="4"></textarea>
+                </div>
+                <!-- Phase 9: Personality Selector -->
+                <div class="settings-group">
+                    <label class="settings-label">🎭 Response Personality</label>
+                    <p class="settings-hint">Choose how NOVA responds — tone, depth, and style adapt automatically.</p>
+                    <div class="personality-grid" id="personality-grid">
+                        <div class="personality-card active" id="pers-default" onclick="setPersonality('default')">
+                            <div class="pers-emoji">🤖</div>
+                            <div class="pers-name">Default</div>
+                            <div class="pers-desc">Balanced · Helpful</div>
+                        </div>
+                        <div class="personality-card" id="pers-teacher" onclick="setPersonality('teacher')">
+                            <div class="pers-emoji">📚</div>
+                            <div class="pers-name">Teacher</div>
+                            <div class="pers-desc">Clear · Structured</div>
+                        </div>
+                        <div class="personality-card" id="pers-friend" onclick="setPersonality('friend')">
+                            <div class="pers-emoji">😊</div>
+                            <div class="pers-name">Friend</div>
+                            <div class="pers-desc">Casual · Warm</div>
+                        </div>
+                        <div class="personality-card" id="pers-expert" onclick="setPersonality('expert')">
+                            <div class="pers-emoji">🎓</div>
+                            <div class="pers-name">Expert</div>
+                            <div class="pers-desc">Deep · Technical</div>
+                        </div>
+                        <div class="personality-card" id="pers-coach" onclick="setPersonality('coach')">
+                            <div class="pers-emoji">💪</div>
+                            <div class="pers-name">Coach</div>
+                            <div class="pers-desc">Motivating · Action</div>
+                        </div>
+                    </div>
+                    <div class="pers-active-row">
+                        <span class="pers-active-label">Active: <strong id="pers-active-name">Default</strong></span>
+                    </div>
                 </div>
                 <div class="settings-group">
                     <label class="settings-label">Response Mode</label>

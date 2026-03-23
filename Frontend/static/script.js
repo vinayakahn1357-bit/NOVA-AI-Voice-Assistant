@@ -1,6 +1,6 @@
-// =====================================================================
+// ======================================================================
 // NOVA – AI Assistant Script  v2.0
-// =====================================================================
+// ======================================================================
 
 // ─── Session ID (unique per browser tab, persisted in sessionStorage) ──────
 let novaSessionId = sessionStorage.getItem('nova_session_id');
@@ -418,7 +418,8 @@ function startNewConversation() {
     if (chatBox) chatBox.innerHTML = '';
     showWelcomeScreen();
     stopSpeaking();
-    hideActiveDocBar();  // Phase 8: clear document indicator
+    clearPdfFile();          // Clear pending PDF attachment
+    hideActiveDocBar();      // Phase 8: clear document indicator
     fetch('/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -802,9 +803,9 @@ async function sendFull(message, typingDiv, chatBox) {
         try {
             errBody = await response.text();
             console.error('[NOVA sendFull] Error response body:', errBody.slice(0, 500));
-        } catch (_) {}
+        } catch (_) { }
         let errData = {};
-        try { errData = JSON.parse(errBody); } catch (_) {}
+        try { errData = JSON.parse(errBody); } catch (_) { }
         throw new Error(errData.error || `Error ${response.status}: ${errBody.slice(0, 200)}`);
     }
 
@@ -1735,7 +1736,7 @@ function loadSettingsIntoUI() {
     // Hybrid fields — if the specific hybrid fields are empty, fall back to
     // the canonical shared keys already saved (so settings round-trip cleanly)
     const savedOllamaKey = s.ollama_api_key || '';
-    const savedGroqKey   = s.groq_api_key   || '';
+    const savedGroqKey = s.groq_api_key || '';
     const hOllamaKey = document.getElementById('settings-hybrid-ollama-key');
     if (hOllamaKey) hOllamaKey.value = s.ollama_api_key || '';
     const hOllamaUrl = document.getElementById('settings-hybrid-ollama-url');
@@ -1746,6 +1747,10 @@ function loadSettingsIntoUI() {
     if (hGroqKey) hGroqKey.value = s.groq_api_key || '';
     const hGroqModel = document.getElementById('settings-hybrid-groq-model');
     if (hGroqModel && s.hybrid_groq_model) hGroqModel.value = s.hybrid_groq_model;
+
+    // Phase 9: Personality
+    const savedPers = localStorage.getItem('nova_personality') || 'default';
+    _updatePersonalityUI(savedPers);
 }
 
 async function saveSettings() {
@@ -1769,14 +1774,14 @@ async function saveSettings() {
 
     // Resolve canonical keys — prefer the active-provider's specific field,
     // then fall back to the other field, so whichever one the user filled wins.
-    const final_groq_key   = (provider === 'hybrid'
-        ? (h_groq_key   || groq_api_key)
-        : (groq_api_key || h_groq_key))    || '';
+    const final_groq_key = (provider === 'hybrid'
+        ? (h_groq_key || groq_api_key)
+        : (groq_api_key || h_groq_key)) || '';
     const final_ollama_key = (provider === 'hybrid'
-        ? (h_ollama_key   || ollama_api_key)
+        ? (h_ollama_key || ollama_api_key)
         : (ollama_api_key || h_ollama_key)) || '';
     const final_ollama_url = (provider === 'hybrid'
-        ? (h_ollama_url   || ollama_cloud_url)
+        ? (h_ollama_url || ollama_cloud_url)
         : (ollama_cloud_url || h_ollama_url)) || 'https://api.ollama.com/api/generate';
 
     const settings = {
@@ -1803,18 +1808,19 @@ async function saveSettings() {
 
     const activeModel = provider === 'groq' ? groq_model
         : provider === 'hybrid' ? `${hybrid_ollama_model} / ${hybrid_groq_model}`
-        : model;
+            : model;
     updateModelBadge(activeModel);
     closeSettings();
     const providerLabel = provider === 'groq' ? '☁️ Groq'
         : provider === 'hybrid' ? '🔀 Hybrid'
-        : provider === 'ollama_cloud' ? '🌐 Ollama Cloud'
-        : '🖥️ Ollama';
+            : provider === 'ollama_cloud' ? '🌐 Ollama Cloud'
+                : '🖥️ Ollama';
     showToast(`Settings saved! Provider: ${providerLabel} ✓`, 'success');
 }
 
 async function resetSettings() {
     localStorage.removeItem('nova_settings');
+    localStorage.removeItem('nova_personality');
     try {
         await fetch('/settings', {
             method: 'POST',
@@ -1828,8 +1834,75 @@ async function resetSettings() {
             }),
         });
     } catch { }
+    // Phase 9: Reset personality to default
+    try {
+        await fetch('/settings/personality', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+            body: JSON.stringify({ personality: 'default' }),
+        });
+    } catch { }
     loadSettingsIntoUI();
     showToast('Settings reset to defaults', 'info');
+}
+
+// ── Phase 9: Personality System ──────────────────────────────────────────────
+
+let currentPersonality = 'default';
+
+const PERSONALITY_NAMES = {
+    default: 'Default',
+    teacher: 'Teacher',
+    friend: 'Friend',
+    expert: 'Expert',
+    coach: 'Coach'
+};
+
+async function setPersonality(mode) {
+    currentPersonality = mode;
+    _updatePersonalityUI(mode);
+    localStorage.setItem('nova_personality', mode);
+
+    try {
+        const r = await fetch('/settings/personality', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+            body: JSON.stringify({ personality: mode }),
+        });
+        if (r.ok) {
+            showToast(`Personality: ${PERSONALITY_NAMES[mode] || mode} 🎭`, 'success');
+        }
+    } catch (e) {
+        console.warn('Failed to sync personality:', e);
+    }
+}
+
+function _updatePersonalityUI(mode) {
+    currentPersonality = mode;
+    document.querySelectorAll('.personality-card').forEach(card => card.classList.remove('active'));
+    const activeCard = document.getElementById(`pers-${mode}`);
+    if (activeCard) activeCard.classList.add('active');
+    const nameEl = document.getElementById('pers-active-name');
+    if (nameEl) nameEl.textContent = PERSONALITY_NAMES[mode] || mode;
+}
+
+async function loadPersonality() {
+    // Try backend first, fall back to localStorage
+    try {
+        const r = await fetch('/settings/personality', {
+            headers: { 'X-Session-Id': sessionId },
+        });
+        if (r.ok) {
+            const data = await r.json();
+            currentPersonality = data.current || 'default';
+            localStorage.setItem('nova_personality', currentPersonality);
+            _updatePersonalityUI(currentPersonality);
+            return;
+        }
+    } catch { }
+    // Fallback to localStorage
+    const saved = localStorage.getItem('nova_personality') || 'default';
+    _updatePersonalityUI(saved);
 }
 
 async function applySavedSettings() {
@@ -1921,6 +1994,107 @@ function setVoiceListeningState(active) {
         if (micRing) micRing.style.animationDuration = '2.5s';
     }
     updateVoiceStatusText();
+}
+
+// ─── Speech-to-Text Dictation (types into textarea) ──────────────────────────
+let dictationRecognition = null;
+let isDictating = false;
+
+function handleDictation() {
+    const micBtn = document.getElementById('main-mic-btn');
+    const inputField = document.getElementById('user-input');
+    if (!inputField) return;
+
+    // ── Tap again → stop listening ──
+    if (isDictating && dictationRecognition) {
+        dictationRecognition.stop();
+        return;
+    }
+
+    // Check browser support
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        showToast('Speech recognition is not supported in this browser', 'warning');
+        return;
+    }
+
+    // Create recognition instance
+    dictationRecognition = new SR();
+    dictationRecognition.continuous = true;
+    dictationRecognition.interimResults = true;
+    dictationRecognition.lang = 'en-US';
+
+    // Track what was already in the textarea before dictation started
+    const textBeforeDictation = inputField.value;
+    let finalTranscript = '';
+
+    dictationRecognition.onstart = () => {
+        isDictating = true;
+        if (micBtn) {
+            micBtn.classList.add('dictating');
+            micBtn.title = 'Tap to stop listening';
+        }
+        inputField.placeholder = '🎤 Listening… tap mic to stop';
+        finalTranscript = '';
+    };
+
+    dictationRecognition.onresult = (event) => {
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript + ' ';
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+
+        // Show live preview: existing text + final + interim
+        const prefix = textBeforeDictation ? textBeforeDictation + ' ' : '';
+        inputField.value = prefix + finalTranscript + interimTranscript;
+
+        // Auto-resize textarea
+        inputField.style.height = 'auto';
+        inputField.style.height = Math.min(inputField.scrollHeight, 150) + 'px';
+    };
+
+    dictationRecognition.onend = () => {
+        isDictating = false;
+        if (micBtn) {
+            micBtn.classList.remove('dictating');
+            micBtn.title = 'Voice to text';
+        }
+        inputField.placeholder = 'Ask Nova anything…';
+
+        // Set clean final text
+        const prefix = textBeforeDictation ? textBeforeDictation + ' ' : '';
+        inputField.value = (prefix + finalTranscript).trim();
+
+        // Auto-resize
+        inputField.style.height = 'auto';
+        inputField.style.height = Math.min(inputField.scrollHeight, 150) + 'px';
+
+        dictationRecognition = null;
+    };
+
+    dictationRecognition.onerror = (event) => {
+        isDictating = false;
+        if (micBtn) {
+            micBtn.classList.remove('dictating');
+            micBtn.title = 'Voice to text';
+        }
+        inputField.placeholder = 'Ask Nova anything…';
+        if (event.error !== 'no-speech') {
+            showToast(`Voice error: ${event.error}`, 'error');
+        }
+        dictationRecognition = null;
+    };
+
+    try {
+        dictationRecognition.start();
+    } catch (e) {
+        showToast('Could not start voice input', 'error');
+    }
 }
 
 function handleMicClick() {
@@ -2045,6 +2219,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     renderHistoryList();
     await applySavedSettings();
     await loadAvailableModels();
+    loadPersonality();  // Phase 9: sync personality from backend
 
     // Show welcome if no current session
     if (!currentSessionId || chatSessions.length === 0) {
@@ -2077,8 +2252,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 
-    // ── Mic buttons ──
-    document.querySelectorAll('.mic-orb-btn, #main-mic-btn').forEach(btn => {
+    // ── Mic buttons (voice assistant view only — NOT the input bar mic) ──
+    document.querySelectorAll('.mic-orb-btn').forEach(btn => {
         btn.addEventListener('click', handleMicClick);
     });
 
@@ -2269,19 +2444,19 @@ function initHomeParticles() {
     logoGeoData = [];
 
     // Procedurally generate a Tech/Neural Sphere Aura
-    for(let i = 0; i < logoParticleCount * 3; i+=3) {
+    for (let i = 0; i < logoParticleCount * 3; i += 3) {
         // Sphere distribution
         const radius = 50 + Math.random() * 60; // Inner empty space of 50 for the logo
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos((Math.random() * 2) - 1);
-        
+
         let px = radius * Math.sin(phi) * Math.cos(theta);
         let py = radius * Math.sin(phi) * Math.sin(theta);
         let pz = radius * Math.cos(phi);
 
         posArray[i] = px;
-        posArray[i+1] = py;
-        posArray[i+2] = pz;
+        posArray[i + 1] = py;
+        posArray[i + 2] = pz;
 
         // Save original positions and initial velocity for physics
         logoGeoData.push({
@@ -2290,17 +2465,17 @@ function initHomeParticles() {
             angle: Math.random() * Math.PI * 2,
             speed: 0.005 + Math.random() * 0.015
         });
-        
+
         // Color based on radius (inner cyan, outer purple)
-        const mixRatio = (radius - 50) / 60; 
+        const mixRatio = (radius - 50) / 60;
         let mixedColor = colorInside.clone().lerp(colorOutside, mixRatio);
-        
+
         // Sprinkle gold
         if (Math.random() > 0.95) mixedColor = colorGold;
-        
+
         colorsArray[i] = mixedColor.r;
-        colorsArray[i+1] = mixedColor.g;
-        colorsArray[i+2] = mixedColor.b;
+        colorsArray[i + 1] = mixedColor.g;
+        colorsArray[i + 2] = mixedColor.b;
     }
 
     particleGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
@@ -2317,10 +2492,10 @@ function initHomeParticles() {
     });
 
     homeParticles = new THREE.Points(particleGeometry, particleMaterial);
-    
+
     // Position it higher up where the old 2D logo used to be.
     homeParticles.position.y = 35;
-    
+
     homeScene.add(homeParticles);
 
     // Track mouse for physics repel
@@ -2336,7 +2511,7 @@ function onDocumentMouseMoveHome(event) {
 }
 
 function onWindowResizeHome() {
-    if(!homeCamera || !homeRenderer) return;
+    if (!homeCamera || !homeRenderer) return;
     homeCamera.aspect = window.innerWidth / window.innerHeight;
     homeCamera.updateProjectionMatrix();
     homeRenderer.setSize(window.innerWidth, window.innerHeight);
@@ -2350,44 +2525,44 @@ function animateHomeParticles() {
         cancelAnimationFrame(homeAnimId);
         return;
     }
-    
+
     homeAnimId = requestAnimationFrame(animateHomeParticles);
-    
+
     if (homeParticles) {
         // Slow majestic float & rotate
         const time = Date.now() * 0.001;
         homeParticles.rotation.y = Math.sin(time * 0.2) * 0.5;
         homeParticles.rotation.x = Math.sin(time * 0.3) * 0.2;
-        
+
         // Map mouse screen coords to approximate 3D world coords at z=180
-        const cursorX = mouseX * 0.12; 
-        const cursorY = -mouseY * 0.12 - 35; 
-        
+        const cursorX = mouseX * 0.12;
+        const cursorY = -mouseY * 0.12 - 35;
+
         const positions = homeParticles.geometry.attributes.position.array;
-        
-        for(let i=0; i < logoParticleCount; i++) {
+
+        for (let i = 0; i < logoParticleCount; i++) {
             let data = logoGeoData[i];
-            
+
             // Read current
-            let cx = positions[i*3];
-            let cy = positions[i*3+1];
-            let cz = positions[i*3+2];
-            
+            let cx = positions[i * 3];
+            let cy = positions[i * 3 + 1];
+            let cz = positions[i * 3 + 2];
+
             // Calculate distance to mouse cursor
             let dx = cx - cursorX;
             let dy = cy - cursorY;
-            
+
             // Push away logic
-            let distSq = dx*dx + dy*dy;
+            let distSq = dx * dx + dy * dy;
             let radiusSq = 1600; // Effect radius ~40 units
-            
+
             if (distSq < radiusSq) {
                 let force = (radiusSq - distSq) / radiusSq;
                 data.vx += dx * force * 0.06;
                 data.vy += dy * force * 0.06;
                 data.vz += (Math.random() - 0.5) * force * 0.3; // Pop outwards
             }
-            
+
             // Subtly orbit the particles around their origin to make the sphere feel "alive"
             data.angle += data.speed;
             const orbitX = data.ox + Math.sin(data.angle) * 5;
@@ -2398,21 +2573,21 @@ function animateHomeParticles() {
             data.vx += (orbitX - cx) * 0.04;
             data.vy += (orbitY - cy) * 0.04;
             data.vz += (orbitZ - cz) * 0.04;
-            
+
             // Friction/damping
             data.vx *= 0.85;
             data.vy *= 0.85;
             data.vz *= 0.85;
-            
+
             // Write new
-            positions[i*3]   += data.vx;
-            positions[i*3+1] += data.vy;
-            positions[i*3+2] += data.vz;
+            positions[i * 3] += data.vx;
+            positions[i * 3 + 1] += data.vy;
+            positions[i * 3 + 2] += data.vz;
         }
-        
+
         homeParticles.geometry.attributes.position.needsUpdate = true;
     }
-    
+
     homeRenderer.render(homeScene, homeCamera);
 }
 
@@ -2541,12 +2716,12 @@ async function fetchWeather() {
         const [icon, desc] = WEATHER_CODES[wc] || ['🌡️', 'Unknown'];
 
         document.getElementById('weather-icon').textContent = icon;
-        document.getElementById('weather-temp').textContent = `${Math.round(cur.temperature_2m)}°`;
-        document.getElementById('weather-feel').textContent = `Feels ${Math.round(cur.apparent_temperature)}°C`;
+        document.getElementById('weather-temp').textContent = `${Math.round(cur.temperature_2m)}`;
+        document.getElementById('weather-feel').textContent = `${Math.round(cur.apparent_temperature)}`;
         document.getElementById('weather-desc').textContent = desc;
     } catch (e) {
         console.warn('[NOVA] Weather fetch failed (isolated):', e.message);
-        try { document.getElementById('weather-desc').textContent = 'Weather unavailable'; } catch (_) {}
+        try { document.getElementById('weather-desc').textContent = 'Weather unavailable'; } catch (_) { }
     }
 }
 

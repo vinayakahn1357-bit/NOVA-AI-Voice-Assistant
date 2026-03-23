@@ -208,7 +208,7 @@ class AIService:
 
     # --- Full (Non-Streaming) Generation ---
 
-    def generate(self, history, user_message, prompt_augment=""):
+    def generate(self, history, user_message, prompt_augment="", personality="default"):
         """
         Generate a full AI response with intelligent routing, performance tracking,
         adaptive intelligence, caching, and timing.
@@ -216,6 +216,7 @@ class AIService:
             history: conversation history
             user_message: current user message
             prompt_augment: optional agent-mode prompt instructions
+            personality: personality mode key for prompt styling
         Returns: (ai_response, active_model, provider, metadata)
         """
         t0 = time.time()
@@ -239,8 +240,8 @@ class AIService:
             provider = base_provider
 
         # Build prompts (identical for both providers)
-        full_prompt = self._prompt.build_ollama_prompt(history)
-        groq_messages = self._prompt.build_chat_messages(history)
+        full_prompt = self._prompt.build_ollama_prompt(history, personality)
+        groq_messages = self._prompt.build_chat_messages(history, personality)
 
         # Inject agent-mode prompt augmentation
         if prompt_augment:
@@ -513,7 +514,7 @@ class AIService:
 
     # --- Streaming Generation ---
 
-    def generate_stream(self, history, user_message):
+    def generate_stream(self, history, user_message, personality="default"):
         """
         Generator yielding SSE-formatted tokens.
         Supports streaming for single-provider modes.
@@ -521,8 +522,8 @@ class AIService:
         """
         settings = get_settings()
         provider = self._resolve_provider(settings["provider"])
-        full_prompt = self._prompt.build_ollama_prompt(history)
-        groq_messages = self._prompt.build_chat_messages(history)
+        full_prompt = self._prompt.build_ollama_prompt(history, personality)
+        groq_messages = self._prompt.build_chat_messages(history, personality)
 
         full_reply = []
         active_model = settings["model"]

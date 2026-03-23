@@ -1,9 +1,11 @@
 """
-controllers/chat_controller.py — Chat Request Processing for NOVA (Phase 8)
+controllers/chat_controller.py — Chat Request Processing for NOVA (Phase 10)
 Orchestrates: validate → pipeline/agent → save → return.
 Phase 6: user_id multi-user isolation.
 Phase 7: detects complex tasks → routes to AgentRunner with step streaming.
 Phase 8: persistent document context injection for multi-turn PDF Q&A.
+Phase 9: per-session personality system for response style adaptation.
+Phase 10: ML-based automatic personality prediction.
 """
 
 import json
@@ -50,11 +52,13 @@ class ChatController:
     Handles chat request processing and orchestration.
     Phase 7: accepts optional agent_runner for autonomous task execution.
     Phase 8: injects persistent document context for multi-turn PDF Q&A.
+    Phase 9: per-session personality for response style adaptation.
+    Phase 10: ML-based automatic personality prediction.
     """
 
     def __init__(self, ai_service, session_service, memory_service, command_service,
                  agent_engine=None, response_pipeline=None, agent_runner=None,
-                 document_store=None):
+                 document_store=None, personality_store=None, personality_model=None):
         self._ai = ai_service
         self._session = session_service
         self._memory = memory_service
@@ -63,6 +67,8 @@ class ChatController:
         self._pipeline = response_pipeline
         self._agent_runner = agent_runner      # Phase 7: autonomous agent
         self._document_store = document_store  # Phase 8: persistent PDF context
+        self._personality_store = personality_store  # Phase 9: personality system
+        self._personality_model = personality_model  # Phase 10: ML prediction
 
     # ── Document Context Helpers ──────────────────────────────────────────
 
@@ -158,26 +164,40 @@ class ChatController:
                 },
             }
 
-        # ── Phase 7: Agent detection ───────────────────────────────────
-        if self._agent_runner and self._should_use_agent(user_message):
-            return self._handle_agent_chat(user_message, session_id, user_id, t0)
+        # ── Phase 7+8: Agent detection (document-aware) ──────────────────
+        has_doc = (self._document_store
+                   and self._document_store.has_document(session_id))
+        if self._agent_runner:
+            if self._should_use_document_agent(user_message, has_doc):
+                return self._handle_agent_chat(
+                    user_message, session_id, user_id, t0, with_document=True
+                )
+            elif self._should_use_agent(user_message):
+                return self._handle_agent_chat(
+                    user_message, session_id, user_id, t0, with_document=False
+                )
 
         # ── Phase 8: Inject document context ──────────────────────────────
         augmented_message = self._inject_document_context(user_message, session_id)
+
+        # ── Phase 9+10: Get personality (user-selected > ML > default) ─────
+        personality, ml_meta = self._get_personality(session_id, user_message)
 
         # ── Standard pipeline ──────────────────────────────────────────
         self._session.append_message(session_id, "user", user_message, user_id=user_id)
         history = self._session.get_history(session_id, user_id=user_id)
 
         if self._pipeline:
-            pipeline_result = self._pipeline.execute(history, augmented_message)
+            pipeline_result = self._pipeline.execute(
+                history, augmented_message, personality=personality
+            )
             ai_response = pipeline_result["reply"]
             active_model = pipeline_result["model"]
             provider = pipeline_result["provider"]
             meta = pipeline_result["meta"]
         else:
             ai_response, active_model, provider, ai_meta = self._ai.generate(
-                history, augmented_message
+                history, augmented_message, personality=personality
             )
             meta = {
                 "model": active_model,
@@ -185,6 +205,14 @@ class ChatController:
                 "mode": "normal",
                 "latency_ms": int((time.time() - t0) * 1000),
             }
+
+        # Phase 9: Include personality in meta
+        if personality != "default":
+            meta["personality"] = personality
+
+        # Phase 10: Include ML prediction meta
+        if ml_meta:
+            meta.update(ml_meta)
 
         # Add document indicator to meta if active
         if self._document_store and self._document_store.has_document(session_id):
@@ -219,42 +247,79 @@ class ChatController:
         }
 
     def _handle_agent_chat(self, user_message: str, session_id: str,
-                            user_id: str, t0: float) -> dict:
-        """Handle a chat request via AgentRunner (Phase 7)."""
-        log.info("Agent mode activated: user=%s task='%.60s'", user_id, user_message)
+                            user_id: str, t0: float,
+                            with_document: bool = False) -> dict:
+        """
+        Handle a chat request via AgentRunner (Phase 7).
+        Phase 8: Passes document context when available.
+        Falls back to normal pipeline on failure.
+        """
+        # Phase 8: Get document context if requested
+        doc_context = None
+        if with_document and self._document_store:
+            doc_context = self._document_store.get(session_id)
+
+        mode_label = "document-agent" if doc_context else "agent"
+        log.info("%s mode activated: user=%s task='%.60s'",
+                 mode_label.title(), user_id, user_message)
 
         self._session.append_message(session_id, "user", user_message, user_id=user_id)
         history = self._session.get_history(session_id, user_id=user_id)
 
-        # Run the autonomous agent
-        result = self._agent_runner.run(
-            task=user_message,
-            history=history,
-            user_id=user_id,
-        )
+        try:
+            # Run the autonomous agent
+            result = self._agent_runner.run(
+                task=user_message,
+                history=history,
+                user_id=user_id,
+                document_context=doc_context,
+            )
 
-        ai_response = result.final_answer
-        self._session.append_message(session_id, "nova", ai_response, user_id=user_id)
+            ai_response = result.final_answer
+            self._session.append_message(session_id, "nova", ai_response, user_id=user_id)
 
-        # Store agent run in memory
-        self._memory.record_turn(user_id=user_id)
-        if hasattr(self._memory, "store_agent_run"):
-            self._memory.store_agent_run(user_id, user_message, result)
+            # Store agent run in memory
+            self._memory.record_turn(user_id=user_id)
+            if hasattr(self._memory, "store_agent_run"):
+                self._memory.store_agent_run(user_id, user_message, result)
 
-        elapsed_ms = int((time.time() - t0) * 1000)
+            elapsed_ms = int((time.time() - t0) * 1000)
 
-        return {
-            "reply": ai_response,
-            "session_id": session_id,
-            "meta": {
-                "mode": "agent",
+            meta = {
+                "mode": mode_label,
                 "model": "nova-agent",
                 "provider": "internal",
                 "latency_ms": elapsed_ms,
                 "steps_taken": result.steps_taken,
                 "tools_used": result.tools_used,
-            },
-        }
+            }
+            if doc_context:
+                meta["active_document"] = doc_context.get("filename")
+
+            return {
+                "reply": ai_response,
+                "session_id": session_id,
+                "meta": meta,
+            }
+
+        except Exception as exc:
+            # Fallback: use normal pipeline with document context injection
+            log.warning("Agent failed, falling back to pipeline: %s", exc)
+            augmented_message = self._inject_document_context(user_message, session_id)
+            if self._pipeline:
+                pipeline_result = self._pipeline.execute(history, augmented_message)
+                ai_response = pipeline_result["reply"]
+                self._session.append_message(session_id, "nova", ai_response, user_id=user_id)
+                return {
+                    "reply": ai_response,
+                    "session_id": session_id,
+                    "meta": {
+                        **pipeline_result["meta"],
+                        "mode": "fallback",
+                        "agent_error": str(exc),
+                    },
+                }
+            raise
 
     def handle_chat_stream(self, data: dict, session_id: str) -> Response:
         """
@@ -305,12 +370,24 @@ class ChatController:
                 },
             )
 
-        # ── Phase 7: Agent streaming ───────────────────────────────────
-        if self._agent_runner and self._should_use_agent(user_message):
-            return self._handle_agent_stream(user_message, session_id, user_id, t0)
+        # ── Phase 7+8: Agent streaming (document-aware) ────────────────
+        has_doc = (self._document_store
+                   and self._document_store.has_document(session_id))
+        if self._agent_runner:
+            if self._should_use_document_agent(user_message, has_doc):
+                return self._handle_agent_stream(
+                    user_message, session_id, user_id, t0, with_document=True
+                )
+            elif self._should_use_agent(user_message):
+                return self._handle_agent_stream(
+                    user_message, session_id, user_id, t0, with_document=False
+                )
 
         # ── Phase 8: Inject document context ──────────────────────────────
         augmented_message = self._inject_document_context(user_message, session_id)
+
+        # ── Phase 9+10: Get personality (user-selected > ML > default) ─────
+        personality, ml_meta = self._get_personality(session_id, user_message)
 
         # ── Normal streaming conversation ──────────────────────────────
         self._session.append_message(session_id, "user", user_message, user_id=user_id)
@@ -320,7 +397,9 @@ class ChatController:
             full_reply = []
             active_model = get_settings()["model"]
 
-            for chunk in self._ai.generate_stream(history, augmented_message):
+            for chunk in self._ai.generate_stream(
+                history, augmented_message, personality=personality
+            ):
                 yield chunk
                 try:
                     if chunk.startswith("data: "):
@@ -352,17 +431,27 @@ class ChatController:
         )
 
     def _handle_agent_stream(self, user_message: str, session_id: str,
-                              user_id: str, t0: float) -> Response:
+                              user_id: str, t0: float,
+                              with_document: bool = False) -> Response:
         """
         Stream agent reasoning steps via SSE (Phase 7).
+        Phase 8: Passes document context, emits ANALYZE_DOC events.
 
         Events:
             data: {"type": "step", "phase": "THINK", "content": "...", "step": 1}
             data: {"type": "step", "phase": "ACT", "content": "...", "step": 1}
+            data: {"type": "step", "phase": "ANALYZE_DOC", "content": "...", "step": 1}
             data: {"type": "step", "phase": "OBSERVE", "content": "...", "step": 1}
             data: {"type": "done", "final_answer": "...", "steps_taken": 3}
         """
-        log.info("Agent stream activated: user=%s task='%.60s'", user_id, user_message)
+        # Phase 8: Get document context if requested
+        doc_context = None
+        if with_document and self._document_store:
+            doc_context = self._document_store.get(session_id)
+
+        mode_label = "document-agent" if doc_context else "agent"
+        log.info("%s stream activated: user=%s task='%.60s'",
+                 mode_label.title(), user_id, user_message)
 
         self._session.append_message(session_id, "user", user_message, user_id=user_id)
         history = self._session.get_history(session_id, user_id=user_id)
@@ -370,13 +459,33 @@ class ChatController:
         def generate():
             final_answer = ""
 
-            for event in self._agent_runner.run_stream(
-                task=user_message, history=history, user_id=user_id
-            ):
-                yield f'data: {json.dumps(event)}\n\n'
+            try:
+                for event in self._agent_runner.run_stream(
+                    task=user_message, history=history, user_id=user_id,
+                    document_context=doc_context,
+                ):
+                    yield f'data: {json.dumps(event)}\n\n'
 
-                if event.get("type") == "done":
-                    final_answer = event.get("final_answer", "")
+                    if event.get("type") == "done":
+                        final_answer = event.get("final_answer", "")
+
+            except Exception as exc:
+                # Emit error event and fallback
+                log.warning("Agent stream failed: %s", exc)
+                yield f'data: {json.dumps({"type": "step", "phase": "ERROR", "content": f"Agent error: {exc}", "step": -1})}\n\n'
+
+                # Fallback: generate a normal response with document context
+                augmented = self._inject_document_context(user_message, session_id)
+                try:
+                    if self._pipeline:
+                        result = self._pipeline.execute(history, augmented)
+                        final_answer = result["reply"]
+                    else:
+                        final_answer, _, _, _ = self._ai.generate(history, augmented)
+                except Exception:
+                    final_answer = "I encountered an error during analysis. Please try again."
+
+                yield f'data: {json.dumps({"type": "done", "final_answer": final_answer, "steps_taken": 0, "tools_used": [], "mode": "fallback"})}\n\n'
 
             # Save the final answer
             if final_answer:
@@ -413,11 +522,17 @@ class ChatController:
             # Phase 8: Also clear document context on reset
             if self._document_store:
                 self._document_store.clear(session_id)
+            # Phase 9: Reset personality on session clear
+            if self._personality_store:
+                self._personality_store.clear(session_id)
         else:
             self._session.clear_all_sessions(user_id=user_id)
             # Phase 8: Clear all document contexts
             if self._document_store:
                 self._document_store.clear_all()
+            # Phase 9: Clear all personalities
+            if self._personality_store:
+                self._personality_store.clear_all()
 
         return {"status": "Conversation reset."}
 
@@ -428,3 +543,58 @@ class ChatController:
         """Detect if a message warrants autonomous agent processing."""
         from services.agent_runner import should_use_agent
         return should_use_agent(message)
+
+    @staticmethod
+    def _should_use_document_agent(message: str, has_document: bool) -> bool:
+        """Phase 8: Detect if a message warrants document-aware agent processing."""
+        from services.agent_runner import should_use_document_agent
+        return should_use_document_agent(message, has_document)
+
+    # ── Personality Helper ─────────────────────────────────────────────────
+
+    def _get_personality(self, session_id: str, user_message: str = "") -> tuple[str, dict]:
+        """
+        Phase 9+10: Get personality with hybrid priority.
+
+        Priority:
+            1. User-selected personality (from store) → highest
+            2. ML prediction (if enabled + confidence > threshold) → fallback
+            3. "default" → final fallback
+
+        Returns:
+            (personality_key, ml_meta_dict)
+        """
+        ml_meta = {}
+
+        # 1. Check user-selected personality
+        user_selected = "default"
+        if self._personality_store:
+            user_selected = self._personality_store.get(session_id)
+
+        if user_selected != "default":
+            # User explicitly chose — always honour it
+            return (user_selected, ml_meta)
+
+        # 2. Try ML prediction (Phase 10)
+        if (self._personality_model
+                and self._personality_model.is_ready
+                and user_message):
+            try:
+                from config import ENABLE_PERSONALITY_ML, PERSONALITY_ML_CONFIDENCE
+                if ENABLE_PERSONALITY_ML:
+                    predicted, confidence = self._personality_model.predict(user_message)
+                    ml_meta = {
+                        "ml_personality": predicted,
+                        "ml_confidence": round(confidence, 3),
+                    }
+                    if predicted != "default" and confidence >= PERSONALITY_ML_CONFIDENCE:
+                        log.info(
+                            "ML personality: %s (%.2f) for session %s",
+                            predicted, confidence, session_id,
+                        )
+                        return (predicted, ml_meta)
+            except Exception as exc:
+                log.warning("ML personality prediction failed: %s", exc)
+
+        # 3. Default fallback
+        return ("default", ml_meta)

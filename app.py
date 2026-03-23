@@ -157,11 +157,39 @@ from services.document_context import DocumentContextStore
 document_store = DocumentContextStore()
 log.info("Phase 8 — DocumentContextStore: ACTIVE")
 
+# ─── Phase 9: Personality Store ───────────────────────────────────────────────
+from services.personality_service import PersonalityStore
+
+personality_store = PersonalityStore()
+log.info("Phase 9 — PersonalityStore: ACTIVE")
+
+# ─── Phase 10: ML Personality Model ──────────────────────────────────────────
+from config import ENABLE_PERSONALITY_ML
+
+personality_model = None
+if ENABLE_PERSONALITY_ML:
+    try:
+        from ml.personality_model import PersonalityModel
+        _ml_model_path = os.path.join(BASE_DIR, "ml", "personality_model.pkl")
+        personality_model = PersonalityModel()
+        if personality_model.load(_ml_model_path):
+            log.info("Phase 10 — PersonalityModel: ACTIVE (loaded from %s)", _ml_model_path)
+        else:
+            log.warning("Phase 10 — PersonalityModel: pkl not found, run 'python -m ml.train_personality'")
+            personality_model = None
+    except Exception as exc:
+        log.warning("Phase 10 — PersonalityModel: DISABLED (%s)", exc)
+        personality_model = None
+else:
+    log.info("Phase 10 — PersonalityModel: DISABLED (ENABLE_PERSONALITY_ML=false)")
+
 chat_controller     = ChatController(
     ai_service, session_service, memory_service, command_service,
     agent_engine, response_pipeline,
     agent_runner=agent_runner,
     document_store=document_store,
+    personality_store=personality_store,
+    personality_model=personality_model,
 )
 
 # ─── Phase 6: Update Rate Limiters with Redis ─────────────────────────────────
@@ -208,7 +236,8 @@ pdf_service = PDFService()
 import routes.chat as chat_routes
 chat_routes.init_app(chat_controller, cache_service,
                      pdf_service=pdf_service, ai_service=ai_service,
-                     document_store=document_store)
+                     document_store=document_store,
+                     personality_store=personality_store)
 
 import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)

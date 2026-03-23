@@ -132,6 +132,10 @@ CACHE_MAX_ENTRIES = int(os.getenv("NOVA_CACHE_MAX", "100"))
 # ─── Hybrid Evaluator ─────────────────────────────────────────────────────────
 HYBRID_MERGE_THRESHOLD = float(os.getenv("NOVA_HYBRID_MERGE_THRESHOLD", "0.15"))
 
+# ─── Phase 10: ML Personality Prediction ──────────────────────────────────────
+ENABLE_PERSONALITY_ML = os.getenv("ENABLE_PERSONALITY_ML", "true").lower() in ("true", "1", "yes")
+PERSONALITY_ML_CONFIDENCE = float(os.getenv("PERSONALITY_ML_CONFIDENCE", "0.6"))
+
 
 def get_settings():
     """Return the current mutable settings dict."""

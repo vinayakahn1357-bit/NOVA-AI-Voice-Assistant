@@ -32,13 +32,15 @@ class ResponsePipeline:
         self._sanitizer = response_sanitizer
         self._cache = cache_service
 
-    def execute(self, history: list, user_message: str) -> dict:
+    def execute(self, history: list, user_message: str,
+                personality: str = "default") -> dict:
         """
         Execute the full response pipeline.
 
         Args:
             history: conversation history (list of {role, content} dicts)
             user_message: the current user message (already validated)
+            personality: personality mode key for prompt styling
 
         Returns: {
             "reply": str,
@@ -99,9 +101,10 @@ class ResponsePipeline:
 
             prompt_augment = agent_result.get("prompt_augment", "")
 
-        # ── Stage 3: Generate (with prompt augmentation) ──────────────────
+        # ── Stage 3: Generate (with prompt augmentation + personality) ─────
         ai_response, active_model, provider, ai_meta = self._ai.generate(
-            history, user_message, prompt_augment=prompt_augment
+            history, user_message, prompt_augment=prompt_augment,
+            personality=personality,
         )
 
         # Set model on Flask g for middleware headers

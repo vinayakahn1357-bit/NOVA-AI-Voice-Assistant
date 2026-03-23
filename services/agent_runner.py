@@ -1,6 +1,9 @@
 """
-services/agent_runner.py — Autonomous Agent System for NOVA (Phase 7)
+services/agent_runner.py — Autonomous Agent System for NOVA (Phase 7 + Phase 8)
 Multi-step reasoning loop: Think → Plan → Act → Observe → Repeat
+
+Phase 7: Core autonomous agent with tool execution.
+Phase 8: Document-aware agent — deep multi-step PDF analysis.
 
 Uses existing AIService for LLM calls and ToolExecutor for tool/plugin execution.
 Does NOT modify any existing services — wraps them in an autonomous loop.
@@ -18,6 +21,7 @@ log = get_logger("agent_runner")
 # ─── Constants ────────────────────────────────────────────────────────────────
 DEFAULT_MAX_STEPS = 7
 HARD_MAX_STEPS = 15
+DOC_CONTEXT_MAX_CHARS = 2000   # Max document context chars sent to agent
 
 
 # ─── Data Structures ─────────────────────────────────────────────────────────
@@ -26,7 +30,7 @@ HARD_MAX_STEPS = 15
 class StepRecord:
     """Record of a single agent reasoning step."""
     step: int
-    phase: str          # THINK, PLAN, ACT, OBSERVE
+    phase: str          # THINK, PLAN, ACT, OBSERVE, ANALYZE_DOC
     content: str        # What happened in this phase
     action_type: str = ""   # "tool", "plugin", "ai", "none"
     action_name: str = ""   # Name of tool/plugin called
@@ -47,6 +51,7 @@ class AgentResult:
     total_time_ms: int = 0
     task: str = ""
     error: str = None
+    document_used: str = None   # Phase 8: filename if document was used
 
     def to_dict(self, include_steps: bool = False) -> dict:
         d = {
@@ -61,6 +66,8 @@ class AgentResult:
             d["steps"] = self.steps
         if self.error:
             d["error"] = self.error
+        if self.document_used:
+            d["document_used"] = self.document_used
         return d
 
 
@@ -99,6 +106,49 @@ When you have enough information to give a final answer, set "is_done" to true a
 - Always provide a final answer, even if partial
 """
 
+# Phase 8: Document-aware agent system prompt
+_AGENT_DOCUMENT_SYSTEM_PROMPT = """You are NOVA's autonomous document analysis agent. You perform deep, multi-step analysis on uploaded documents.
+
+## Document Context
+The user has uploaded a document: **{doc_filename}**
+
+Document content summary:
+{doc_summary}
+
+## Capabilities
+You have access to these tools/capabilities:
+{capabilities}
+
+## Instructions
+For each step, respond in EXACTLY this JSON format:
+```json
+{{
+    "thought": "What I'm analyzing and discovering in the document",
+    "plan": "My next analysis step and why",
+    "action": {{
+        "type": "tool" | "ai" | "done",
+        "name": "tool_name (if type=tool)",
+        "argument": "argument for the tool (if type=tool)",
+        "query": "specific analysis question about the document (if type=ai)"
+    }},
+    "is_done": false
+}}
+```
+
+When you have completed your analysis, set "is_done" to true and put your complete, structured analysis in "thought".
+
+## Document Analysis Rules
+- Break the analysis into clear, structured steps
+- Extract key facts, numbers, dates, and important details
+- Identify patterns, themes, and relationships in the document
+- Provide evidence-based conclusions (reference specific content)
+- Structure your final answer with clear sections (Key Findings, Insights, Conclusions)
+- Do NOT simply repeat the raw document text — synthesize and analyze
+- Each step should build on previous discoveries
+- Use sub-queries (type=ai) to reason deeply about specific sections
+- If the document is technical, explain findings clearly
+"""
+
 _STEP_PROMPT = """## Current Task
 {task}
 
@@ -110,6 +160,24 @@ _STEP_PROMPT = """## Current Task
 
 What is your next step? Respond in the JSON format specified.
 Remember: set "is_done": true when you have enough to give a final answer."""
+
+# Phase 8: Document-aware step prompt
+_STEP_PROMPT_WITH_DOC = """## Current Task
+{task}
+
+## Document Being Analyzed
+**{doc_filename}**
+
+{doc_summary}
+
+## Work Done So Far
+{history}
+
+## Available Capabilities
+{capabilities}
+
+What is your next analysis step? Respond in the JSON format specified.
+Focus on extracting insights from the document. Set "is_done": true when your analysis is complete."""
 
 
 # ─── Agent Runner ─────────────────────────────────────────────────────────────
@@ -123,6 +191,7 @@ class AgentRunner:
     - ToolExecutor for tool/plugin execution
     - MemoryService for context (optional)
 
+    Phase 8: Accepts document_context for deep PDF analysis.
     Does NOT modify any underlying service — purely a wrapper.
     """
 
@@ -132,7 +201,8 @@ class AgentRunner:
         self._memory = memory_service
 
     def run(self, task: str, history: list = None, user_id: str = "default",
-            max_steps: int = DEFAULT_MAX_STEPS, debug: bool = False) -> AgentResult:
+            max_steps: int = DEFAULT_MAX_STEPS, debug: bool = False,
+            document_context: dict = None) -> AgentResult:
         """
         Execute an autonomous agent run for a given task.
 
@@ -142,6 +212,7 @@ class AgentRunner:
             user_id: User identifier for memory scoping
             max_steps: Maximum reasoning steps (capped at HARD_MAX_STEPS)
             debug: If True, include step details in result
+            document_context: Phase 8 — dict with {filename, summary, chunks}
 
         Returns:
             AgentResult with final_answer and metadata
@@ -155,6 +226,23 @@ class AgentRunner:
         # Get available capabilities
         capabilities = self._format_capabilities()
 
+        # Phase 8: Prepare document context
+        has_doc = document_context is not None
+        doc_filename = document_context.get("filename", "document") if has_doc else ""
+        doc_summary = self._truncate_doc_summary(
+            document_context.get("summary", "")
+        ) if has_doc else ""
+
+        # Choose system prompt based on document presence
+        if has_doc:
+            system_prompt = _AGENT_DOCUMENT_SYSTEM_PROMPT.format(
+                doc_filename=doc_filename,
+                doc_summary=doc_summary,
+                capabilities=capabilities,
+            )
+        else:
+            system_prompt = _AGENT_SYSTEM_PROMPT.format(capabilities=capabilities)
+
         # Get memory context if available
         memory_ctx = ""
         if self._memory:
@@ -163,8 +251,16 @@ class AgentRunner:
             except Exception:
                 pass
 
-        log.info("[AgentRunner] Starting: task='%.80s' max_steps=%d user=%s",
-                 task, max_steps, user_id)
+        log.info("[AgentRunner] Starting: task='%.80s' max_steps=%d user=%s doc=%s",
+                 task, max_steps, user_id, doc_filename or "none")
+
+        # Phase 8: Record document analysis start
+        if has_doc:
+            steps.append(StepRecord(
+                step=0, phase="ANALYZE_DOC",
+                content=f"Starting document analysis: {doc_filename}",
+                timestamp=time.time(),
+            ))
 
         for step_num in range(1, max_steps + 1):
             step_t0 = time.time()
@@ -173,11 +269,20 @@ class AgentRunner:
                 # ── THINK + PLAN: Ask LLM for next action ─────────────────
                 history_text = self._format_work_history(work_history)
 
-                step_prompt = _STEP_PROMPT.format(
-                    task=task,
-                    history=history_text or "(No work done yet)",
-                    capabilities=capabilities,
-                )
+                if has_doc:
+                    step_prompt = _STEP_PROMPT_WITH_DOC.format(
+                        task=task,
+                        doc_filename=doc_filename,
+                        doc_summary=doc_summary[:1000],  # Shorter in step prompts
+                        history=history_text or "(No work done yet)",
+                        capabilities=capabilities,
+                    )
+                else:
+                    step_prompt = _STEP_PROMPT.format(
+                        task=task,
+                        history=history_text or "(No work done yet)",
+                        capabilities=capabilities,
+                    )
 
                 # Build messages for AIService
                 messages = []
@@ -190,7 +295,7 @@ class AgentRunner:
                 # Call LLM via existing AIService
                 response, model, provider, meta = self._ai.generate(
                     messages, step_prompt,
-                    prompt_augment=_AGENT_SYSTEM_PROMPT.format(capabilities=capabilities),
+                    prompt_augment=system_prompt,
                 )
 
                 # ── Parse agent response ──────────────────────────────────
@@ -228,6 +333,7 @@ class AgentRunner:
                         tools_used=list(tools_used),
                         total_time_ms=elapsed,
                         task=task,
+                        document_used=doc_filename or None,
                     )
 
                 # ── ACT: Execute the planned action ───────────────────────
@@ -254,18 +360,29 @@ class AgentRunner:
                 elif action_type == "ai":
                     # Use LLM for sub-reasoning
                     sub_query = action.get("query", plan or thought)
-                    sub_messages = [{"role": "user", "content": sub_query}]
 
+                    # Phase 8: Include doc context in sub-queries if available
+                    if has_doc:
+                        sub_query = (
+                            f"Based on this document ({doc_filename}):\n"
+                            f"{doc_summary[:800]}\n\n"
+                            f"Answer this: {sub_query}"
+                        )
+
+                    sub_messages = [{"role": "user", "content": sub_query}]
                     sub_response, _, _, _ = self._ai.generate(sub_messages, sub_query)
                     observation = sub_response
 
                     steps.append(StepRecord(
-                        step=step_num, phase="ACT",
-                        content=f"AI sub-query: {sub_query[:100]}",
+                        step=step_num,
+                        phase="ANALYZE_DOC" if has_doc else "ACT",
+                        content=f"{'Document analysis' if has_doc else 'AI sub-query'}: "
+                                f"{action.get('query', sub_query)[:100]}",
                         action_type="ai",
                         timestamp=time.time(),
                     ))
-                    log.info("[AgentRunner] Step %d ACT: ai sub-query", step_num)
+                    log.info("[AgentRunner] Step %d %s: ai sub-query",
+                             step_num, "ANALYZE_DOC" if has_doc else "ACT")
 
                 else:
                     observation = "No action taken."
@@ -309,7 +426,7 @@ class AgentRunner:
         # ── Max steps reached — synthesize final answer ───────────────────
         log.info("[AgentRunner] Max steps (%d) reached. Synthesizing answer.", max_steps)
 
-        final_answer = self._synthesize_final(task, work_history)
+        final_answer = self._synthesize_final(task, work_history, document_context)
         elapsed = int((time.time() - t0) * 1000)
 
         return AgentResult(
@@ -320,17 +437,20 @@ class AgentRunner:
             tools_used=list(tools_used),
             total_time_ms=elapsed,
             task=task,
+            document_used=doc_filename or None,
         )
 
     # ── Streaming Interface ───────────────────────────────────────────────────
 
     def run_stream(self, task: str, history: list = None, user_id: str = "default",
-                   max_steps: int = DEFAULT_MAX_STEPS):
+                   max_steps: int = DEFAULT_MAX_STEPS,
+                   document_context: dict = None):
         """
         Generator that yields step events for real-time streaming.
+        Phase 8: Supports document_context for document analysis streaming.
 
         Yields dicts with:
-            {"type": "step", "phase": "THINK"|"ACT"|"OBSERVE", "content": ..., "step": N}
+            {"type": "step", "phase": "THINK"|"ACT"|"OBSERVE"|"ANALYZE_DOC", "content": ..., "step": N}
             {"type": "done", "final_answer": ..., "steps_taken": N, "tools_used": [...]}
         """
         t0 = time.time()
@@ -339,6 +459,22 @@ class AgentRunner:
         work_history = []
         capabilities = self._format_capabilities()
 
+        # Phase 8: Document context
+        has_doc = document_context is not None
+        doc_filename = document_context.get("filename", "document") if has_doc else ""
+        doc_summary = self._truncate_doc_summary(
+            document_context.get("summary", "")
+        ) if has_doc else ""
+
+        if has_doc:
+            system_prompt = _AGENT_DOCUMENT_SYSTEM_PROMPT.format(
+                doc_filename=doc_filename,
+                doc_summary=doc_summary,
+                capabilities=capabilities,
+            )
+        else:
+            system_prompt = _AGENT_SYSTEM_PROMPT.format(capabilities=capabilities)
+
         memory_ctx = ""
         if self._memory:
             try:
@@ -346,15 +482,32 @@ class AgentRunner:
             except Exception:
                 pass
 
+        # Phase 8: Emit document analysis start event
+        if has_doc:
+            yield {
+                "type": "step", "phase": "ANALYZE_DOC",
+                "content": f"Starting deep analysis of: {doc_filename}",
+                "step": 0,
+            }
+
         for step_num in range(1, max_steps + 1):
             try:
                 history_text = self._format_work_history(work_history)
 
-                step_prompt = _STEP_PROMPT.format(
-                    task=task,
-                    history=history_text or "(No work done yet)",
-                    capabilities=capabilities,
-                )
+                if has_doc:
+                    step_prompt = _STEP_PROMPT_WITH_DOC.format(
+                        task=task,
+                        doc_filename=doc_filename,
+                        doc_summary=doc_summary[:1000],
+                        history=history_text or "(No work done yet)",
+                        capabilities=capabilities,
+                    )
+                else:
+                    step_prompt = _STEP_PROMPT.format(
+                        task=task,
+                        history=history_text or "(No work done yet)",
+                        capabilities=capabilities,
+                    )
 
                 messages = []
                 if history:
@@ -365,7 +518,7 @@ class AgentRunner:
 
                 response, model, provider, meta = self._ai.generate(
                     messages, step_prompt,
-                    prompt_augment=_AGENT_SYSTEM_PROMPT.format(capabilities=capabilities),
+                    prompt_augment=system_prompt,
                 )
 
                 parsed = self._parse_agent_response(response)
@@ -378,13 +531,16 @@ class AgentRunner:
 
                 if is_done:
                     elapsed = int((time.time() - t0) * 1000)
-                    yield {
+                    done_event = {
                         "type": "done",
                         "final_answer": thought,
                         "steps_taken": step_num,
                         "tools_used": list(tools_used),
                         "total_time_ms": elapsed,
                     }
+                    if has_doc:
+                        done_event["document_used"] = doc_filename
+                    yield done_event
                     return
 
                 # ACT
@@ -403,8 +559,24 @@ class AgentRunner:
 
                 elif action_type == "ai":
                     sub_query = action.get("query", thought)
-                    yield {"type": "step", "phase": "ACT",
-                           "content": f"Reasoning: {sub_query[:100]}", "step": step_num}
+
+                    # Phase 8: Emit ANALYZE_DOC phase for document sub-queries
+                    phase_label = "ANALYZE_DOC" if has_doc else "ACT"
+                    phase_content = (
+                        f"Analyzing document: {sub_query[:100]}"
+                        if has_doc
+                        else f"Reasoning: {sub_query[:100]}"
+                    )
+                    yield {"type": "step", "phase": phase_label,
+                           "content": phase_content, "step": step_num}
+
+                    # Include doc context in sub-queries
+                    if has_doc:
+                        sub_query = (
+                            f"Based on this document ({doc_filename}):\n"
+                            f"{doc_summary[:800]}\n\n"
+                            f"Answer this: {sub_query}"
+                        )
 
                     sub_response, _, _, _ = self._ai.generate(
                         [{"role": "user", "content": sub_query}], sub_query
@@ -435,15 +607,18 @@ class AgentRunner:
                 })
 
         # Max steps — synthesize
-        final = self._synthesize_final(task, work_history)
+        final = self._synthesize_final(task, work_history, document_context)
         elapsed = int((time.time() - t0) * 1000)
-        yield {
+        done_event = {
             "type": "done",
             "final_answer": final,
             "steps_taken": max_steps,
             "tools_used": list(tools_used),
             "total_time_ms": elapsed,
         }
+        if has_doc:
+            done_event["document_used"] = doc_filename
+        yield done_event
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -518,18 +693,40 @@ class AgentRunner:
             )
         return f"Tool result: {result}"
 
-    def _synthesize_final(self, task: str, work_history: list) -> str:
+    def _truncate_doc_summary(self, summary: str) -> str:
+        """Truncate document summary to fit within agent context limits."""
+        if len(summary) <= DOC_CONTEXT_MAX_CHARS:
+            return summary
+        return summary[:DOC_CONTEXT_MAX_CHARS] + "\n\n[... document summary truncated for context limit]"
+
+    def _synthesize_final(self, task: str, work_history: list,
+                          document_context: dict = None) -> str:
         """Use LLM to synthesize a final answer from work history."""
         if not work_history:
             return "I wasn't able to complete this task. Please try rephrasing your request."
 
         history_text = self._format_work_history(work_history)
-        synthesis_prompt = (
-            f"You worked on this task: {task}\n\n"
-            f"Here's the work you did:\n{history_text}\n\n"
-            f"Now synthesize all findings into a clear, complete final answer. "
-            f"Be concise but thorough."
-        )
+
+        # Phase 8: Document-aware synthesis
+        if document_context:
+            doc_filename = document_context.get("filename", "document")
+            synthesis_prompt = (
+                f"You analyzed the document '{doc_filename}' for this task: {task}\n\n"
+                f"Here's the analysis work you did:\n{history_text}\n\n"
+                f"Now synthesize all findings into a clear, comprehensive analysis.\n"
+                f"Structure your response with:\n"
+                f"## Key Findings\n"
+                f"## Detailed Insights\n"
+                f"## Conclusions\n\n"
+                f"Be thorough but concise. Reference specific content from the document."
+            )
+        else:
+            synthesis_prompt = (
+                f"You worked on this task: {task}\n\n"
+                f"Here's the work you did:\n{history_text}\n\n"
+                f"Now synthesize all findings into a clear, complete final answer. "
+                f"Be concise but thorough."
+            )
 
         try:
             messages = [{"role": "user", "content": synthesis_prompt}]
@@ -557,7 +754,22 @@ _AGENT_TRIGGER_PATTERNS = [
     r"(?:thoroughly|comprehensively|extensively)\s+(?:research|analyze|examine|review)",
 ]
 
+# Phase 8: Document-analysis trigger patterns
+_DOC_AGENT_TRIGGER_PATTERNS = [
+    r"\banalyze\s+(?:this\s+)?(?:document|pdf|file)\b",
+    r"\bdeep\s+(?:analysis|dive)\b",
+    r"\bextract\s+(?:key\s+)?(?:insights?|points?|facts?|information)\b",
+    r"\bfind\s+(?:important\s+)?(?:patterns?|themes?|trends?)\b",
+    r"\bsummarize\s+and\s+(?:give|provide)\s+(?:conclusions?|analysis)\b",
+    r"\bdocument\s+analysis\b",
+    r"\bbreak\s*down\s+(?:this\s+)?(?:document|pdf)\b",
+    r"\bwhat\s+are\s+the\s+(?:key|main|important)\s+(?:points?|takeaways?|findings?)\b",
+    r"\bidentify\s+(?:key|important|main)\b",
+    r"\bprovide\s+(?:a\s+)?(?:detailed|thorough|comprehensive)\s+(?:analysis|summary|review)\b",
+]
+
 _COMPILED_AGENT_TRIGGERS = [re.compile(p, re.IGNORECASE) for p in _AGENT_TRIGGER_PATTERNS]
+_COMPILED_DOC_AGENT_TRIGGERS = [re.compile(p, re.IGNORECASE) for p in _DOC_AGENT_TRIGGER_PATTERNS]
 
 
 def should_use_agent(message: str) -> bool:
@@ -577,3 +789,26 @@ def should_use_agent(message: str) -> bool:
             return True
 
     return False
+
+
+def should_use_document_agent(message: str, has_document: bool = False) -> bool:
+    """
+    Phase 8: Detect if a message should trigger document-aware agent processing.
+    Returns True when user requests deep document analysis AND a document is active.
+
+    Args:
+        message: The user's message
+        has_document: Whether a document is currently active in the session
+    """
+    if not has_document:
+        return False
+
+    lower = message.lower().strip()
+
+    # Check document-specific triggers
+    for pat in _COMPILED_DOC_AGENT_TRIGGERS:
+        if pat.search(lower):
+            return True
+
+    # Also check standard agent triggers (they apply to documents too)
+    return should_use_agent(message)
