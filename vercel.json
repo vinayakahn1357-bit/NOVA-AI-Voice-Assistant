@@ -1,14 +1,12 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "app.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb"
-      }
+  "functions": {
+    "app.py": {
+      "runtime": "@vercel/python",
+      "maxDuration": 60,
+      "memory": 1024
     }
-  ],
+  },
   "routes": [
     {
       "src": "/static/(.*)",
@@ -39,11 +37,5 @@
         "Cache-Control": "no-cache, no-store, must-revalidate"
       }
     }
-  ],
-  "functions": {
-    "app.py": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
-  }
+  ]
 }

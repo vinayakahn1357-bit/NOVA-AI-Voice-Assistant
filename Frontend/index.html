@@ -269,9 +269,7 @@
 
 <body>
 
-    <!-- ———————————————————————————————
-     HOME VIEW
-——————————————————————————————— -->
+        <!-- HOME VIEW -->
     <div id="view-home" class="app-view view-active">
 
         <!-- User Profile Avatar -->
@@ -282,158 +280,194 @@
                     <div class="prof-header-avatar" id="prof-header-avatar">U</div>
                     <div>
                         <div class="prof-name" id="prof-name">User</div>
-                        <div class="prof-email" id="prof-email">—</div>
+                        <div class="prof-email" id="prof-email">&mdash;</div>
                     </div>
                 </div>
-                <button class="prof-logout-btn" onclick="novaLogout()">⏻ Sign Out</button>
+                <button class="prof-logout-btn" onclick="novaLogout()">&#9211; Sign Out</button>
             </div>
         </div>
 
-        <div class="home-hero">
-            <div class="home-logo-wrap">
-                <div class="home-logo-ring"></div>
-                <img src="/static/nova_logo.png" alt="NOVA" class="home-logo-img">
-            </div>
-            <div class="home-title-block">
-                <div class="home-title">NOVA</div>
-                <div class="home-subtitle">AI ASSISTANT</div>
-            </div>
-            <div class="home-welcome-banner glass-panel">
-                <div class="hwb-text">
-                    <div class="hwb-greeting" id="home-greeting">Good Evening, Vinayaka.</div>
-                    <div class="hwb-sub" id="home-system-status">System Ready.</div>
-                    <div class="hwb-status-row">
-                        <span class="hwb-status-item"><span class="hwb-dot"></span> AI Status: <strong class="text-cyan">Online</strong></span>
-                        <span class="hwb-status-divider"></span>
-                        <span class="hwb-status-item"><span class="hwb-dot"></span> Voice Engine: <strong class="text-cyan">Active</strong></span>
-                        <span class="hwb-status-divider"></span>
-                        <span class="hwb-status-item"><span class="hwb-dot"></span> Memory Sync: <span style="opacity:0.7">Connected</span></span>
+        <!-- TOP ROW: CPU | AI CORE ORB | MEMORY -->
+        <div class="home-top-row">
+
+            <div class="home-orb-wrap">
+                <div class="home-orb-container">
+                    <div class="home-orb-glow"></div>
+                    <div class="home-orb-ring home-orb-r1"></div>
+                    <div class="home-orb-ring home-orb-r2"></div>
+                    <div class="home-orb-core">
+                        <img src="/static/nova_logo.png" alt="NOVA" class="home-orb-img">
                     </div>
                 </div>
+                <div class="home-orb-label">&mdash;&mdash;&mdash;&mdash; AI CORE</div>
             </div>
+
+            </div>
+
+        <!-- WELCOME BANNER -->
+        <div class="home-welcome-banner glass-panel">
+            <div class="hwb-meta hwb-meta-left">CORE_TEMP: 34C</div>
+            <div class="hwb-text">
+                <div class="hwb-greeting" id="home-greeting">WELCOME BACK, VINAYAKA.</div>
+                <div class="hwb-status-row">
+                    <span class="hwb-status-item"><span class="hwb-dot"></span> AI Status: <strong class="text-cyan">Online</strong></span>
+                    <span class="hwb-status-divider"></span>
+                    <span class="hwb-status-item"><span class="hwb-dot"></span> Voice Engine: <strong class="text-cyan">Active</strong></span>
+                    <span class="hwb-status-divider"></span>
+                    <span class="hwb-status-item"><span class="hwb-dot"></span> Memory Sync: <span class="text-cyan">Connected</span></span>
+                </div>
+            </div>
+            <div class="hwb-meta hwb-meta-right">SYNC_LATENCY: 2ms</div>
         </div>
 
+        <!-- CARDS ROW -->
         <div class="home-cards-row">
+
             <!-- WEATHER CARD -->
             <div class="home-card glass-panel" id="card-weather">
-                <div class="hcard-header">WEATHER</div>
+                <div class="hcard-header">Weather Card</div>
                 <div class="hcard-body weather-body">
                     <div class="weather-row-main">
-                        <div class="weather-icon-wrap" id="weather-icon">⛅</div>
+                        <div class="weather-icon-wrap" id="weather-icon">&#9925;</div>
                         <div class="weather-temp-wrap">
-                            <div class="weather-temp"><span id="weather-temp">29</span>°</div>
-                            <div class="weather-feel">Feels <span id="weather-feel">29</span>°C</div>
+                            <div class="weather-temp"><span id="weather-temp">28</span>&deg;C</div>
+                            <div class="weather-feel">Feels <span id="weather-feel">30</span>&deg;C</div>
+                            <div class="weather-desc" id="weather-desc">Partly Cloudy</div>
                         </div>
                     </div>
+                    <div class="weather-forecast" id="weather-forecast">
+                        <div class="wf-day"><span class="wf-name">Mon</span><span class="wf-ico">&#9728;</span><span class="wf-tmp">28&deg;</span></div>
+                        <div class="wf-day"><span class="wf-name">Tue</span><span class="wf-ico">&#127783;</span><span class="wf-tmp">28&deg;</span></div>
+                        <div class="wf-day"><span class="wf-name">Wed</span><span class="wf-ico">&#127783;</span><span class="wf-tmp">28&deg;</span></div>
+                        <div class="wf-day"><span class="wf-name">Thu</span><span class="wf-ico">&#9925;</span><span class="wf-tmp">20&deg;</span></div>
+                        <div class="wf-day"><span class="wf-name">Fri</span><span class="wf-ico">&#9728;</span><span class="wf-tmp">28&deg;</span></div>
+                    </div>
+                    <div class="hcard-atmos-bottom">ATMOS_PRESS: 1013 hPa</div>
                 </div>
-                <div class="weather-desc" id="weather-desc" style="margin-top: auto; opacity: 0.6; font-size: 0.85rem;">Partly Cloudy</div>
             </div>
-            
+
             <!-- SCHEDULE CARD -->
             <div class="home-card glass-panel" id="card-schedule">
-                <div class="hcard-header">TODAY'S SCHEDULE <span class="hcard-badge" id="event-count">0 EVENTS</span></div>
-                <div class="hcard-body">
-                    <div class="mini-cal" id="mini-cal">
-                        <div class="cal-header">
-                            <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                <div class="hcard-header">Today's Schedule Card <span class="hcard-menu-dots">&hellip;</span></div>
+                <div class="hcard-body schedule-body">
+                    <div class="sched-date-col">
+                        <div class="sched-month" id="sched-month">OCT</div>
+                        <div class="sched-day" id="sched-day">26</div>
+                    </div>
+                    <div class="sched-events-col">
+                        <div class="sched-timeline">
+                            <span class="st-time">10:00 AM</span><div class="st-dot active"></div>
+                            <span class="st-time">1:20 PM</span><div class="st-dot"></div>
+                            <span class="st-time">2:00 PM</span><div class="st-dot"></div>
+                            <span class="st-time">3:00 PM</span>
                         </div>
-                        <div class="cal-grid">
-                            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span>
-                            <span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span>
-                            <span class="curr-date">15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span>
-                            <span>22</span><span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span>
-                            <span>29</span><span>30</span><span>31</span><span></span><span></span><span></span><span></span>
+                        <div class="sched-events" id="sched-events">
+                            <div class="sched-event">10:00 AM &ndash; Design Review</div>
+                            <div class="sched-event">1:30 PM &ndash; Client Call</div>
                         </div>
                     </div>
+                    <div class="sched-arc-col">
+                        <svg class="sched-arc-svg" viewBox="0 0 60 160" width="50" height="140">
+                            <path d="M30 10 A55 70 0 0 1 30 150" fill="none" stroke="rgba(0,229,255,0.12)" stroke-width="2"/>
+                            <path d="M30 10 A55 70 0 0 1 30 95" fill="none" stroke="#00e5ff" stroke-width="2.5" stroke-linecap="round"/>
+                            <circle cx="30" cy="10" r="3" fill="#00e5ff" opacity="0.9"/>
+                            <circle cx="30" cy="95" r="3" fill="#00e5ff" opacity="0.6"/>
+                        </svg>
+                    </div>
                 </div>
+                <div class="sched-next-label" id="sched-next">NEXT_EVENT_IN: 1h 45m</div>
             </div>
 
             <!-- TASKS CARD -->
             <div class="home-card glass-panel" id="card-tasks">
-                <div class="hcard-header">PENDING TASKS <span class="hcard-badge" id="task-count">3 LEFT</span></div>
+                <div class="hcard-header">Pending Tasks Card <span class="hcard-badge" id="task-count-badge">TASK_QUEUE: 3/10</span></div>
                 <div class="hcard-body tasks-body">
                     <ul class="task-list" id="task-list">
-                        <li class="task-item"><label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label><span class="task-text">Review daily briefing</span></li>
-                        <li class="task-item"><label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label><span class="task-text">Check NOVA memory logs</span></li>
-                        <li class="task-item"><label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label><span class="task-text">Schedule weekly goals</span></li>
+                        <li class="task-item">
+                            <label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label>
+                            <div class="task-item-content">
+                                <span class="task-text">Review daily briefing</span>
+                                <span class="task-priority high">HIGH PRIORITY</span>
+                            </div>
+                        </li>
+                        <li class="task-item">
+                            <label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label>
+                            <div class="task-item-content">
+                                <span class="task-text">Check NOVA memory logs</span>
+                                <span class="task-priority low">LOW PRIORITY</span>
+                            </div>
+                        </li>
+                        <li class="task-item">
+                            <label class="custom-checkbox"><input type="checkbox" class="task-cb" onchange="updateTaskCount()"><span class="checkmark"></span></label>
+                            <div class="task-item-content">
+                                <span class="task-text">Update security protocols</span>
+                                <span class="task-priority high">HIGH PRIORITY</span>
+                            </div>
+                        </li>
                     </ul>
                     <div class="task-input-row">
                         <input type="text" class="task-input" id="task-input-field" placeholder="Add task?" onkeydown="addTaskOnEnter(event)">
                         <button class="task-add-btn" onclick="addTask()">+</button>
                     </div>
                 </div>
+                <div class="hcard-footer-label">TASK_QUEUE: <span id="task-queue-display">3/10</span></div>
             </div>
 
             <!-- NEWS CARD -->
             <div class="home-card glass-panel" id="card-news">
-                <div class="hcard-header">LATEST HEADLINES</div>
+                <div class="hcard-header">Latest Headlines Card <span class="hcard-menu-dots">&hellip;</span></div>
                 <div class="hcard-body news-body" id="news-list">
-                    <!-- Hardcoded mock UI to match the reference for aesthetic until JS populates -->
                     <div class="news-item">
-                        <div class="news-icon" style="background: rgba(0, 229, 255, 0.1); color: #00e5ff;">🌍</div>
+                        <div class="news-icon" style="background:rgba(0,229,255,0.12);">&#127757;</div>
                         <div class="news-content">
-                            <div class="news-title">World leaders convene for climate summit</div>
-                            <div class="news-source">Global News</div>
+                            <div class="news-title">Global: World leaders convene for climate summit</div>
                         </div>
                     </div>
                     <div class="news-item">
-                        <div class="news-icon" style="background: rgba(188, 96, 211, 0.1); color: #bc60d3;">🔬</div>
+                        <div class="news-icon" style="background:rgba(188,96,211,0.12);">&#128302;</div>
                         <div class="news-content">
-                            <div class="news-title">New AI model breaks benchmark records</div>
-                            <div class="news-source">Tech Today</div>
+                            <div class="news-title">Tech: New AI model breaks benchmark records</div>
                         </div>
                     </div>
                     <div class="news-item">
-                        <div class="news-icon" style="background: rgba(226, 192, 119, 0.1); color: #e2c077;">🚀</div>
+                        <div class="news-icon" style="background:rgba(226,192,119,0.12);">&#128640;</div>
                         <div class="news-content">
-                            <div class="news-title">Space agency announces lunar mission date</div>
-                            <div class="news-source">Space Wire</div>
+                            <div class="news-title">Space: Mars mission successfully launches</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <nav class="home-bottom-nav glass-panel-nav">
-            <button class="hbn-tab active" onclick="showView('home')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                </svg>
-                <span>HOME</span>
-            </button>
-            <button class="hbn-tab hbn-mic" onclick="showView('voice')">
-                <div class="hbn-mic-ring"></div>
-                <div class="hbn-mic-glow"></div>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-                    stroke-linejoin="round">
-                    <path d="M12 3v18" />
-                    <path d="M8 7v10" />
-                    <path d="M16 7v10" />
-                    <path d="M4 11v2" />
-                    <path d="M20 11v2" />
-                </svg>
-                <span style="color: #00e5ff; font-weight: 600; text-shadow: 0 0 10px rgba(0,229,255,0.6);">NOVA</span>
-            </button>
-            <button class="hbn-tab" onclick="showView('chat')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                <span>CHAT</span>
-            </button>
-            <button class="hbn-tab" onclick="showView('dashboard')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="7" height="7" />
-                    <rect x="14" y="3" width="7" height="7" />
-                    <rect x="14" y="14" width="7" height="7" />
-                    <rect x="3" y="14" width="7" height="7" />
-                </svg>
-                <span>STATS</span>
-            </button>
-        </nav>
+        <!-- BOTTOM SECTION: edge widgets + nav -->
+        <div class="home-bottom-section">
+            
+
+            <nav class="home-bottom-nav glass-panel-nav">
+                <button class="hbn-tab active" id="hbn-home" onclick="setHomeNav('hbn-home'); showView('home')">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                    <span>Home</span>
+                </button>
+                <button class="hbn-tab" id="hbn-voice" onclick="setHomeNav('hbn-voice'); showView('voice')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="22" height="22"><path d="M12 3v18"/><path d="M8 7v10"/><path d="M16 7v10"/><path d="M4 11v2"/><path d="M20 11v2"/></svg>
+                    <span>NOVA Chat</span>
+                </button>
+                <button class="hbn-tab" id="hbn-chat" onclick="setHomeNav('hbn-chat'); showView('chat')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span>Messages</span>
+                </button>
+                <button class="hbn-tab" id="hbn-apps" onclick="setHomeNav('hbn-apps'); showView('dashboard')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                    <span>Apps</span>
+                </button>
+            </nav>
+
+            
+        </div>
+
     </div>
 
-    <!-- ———————————————————————————————
+<!-- ———————————————————————————————
      CHAT VIEW  —  Gemini-style clean layout
 ——————————————————————————————— -->
     <div id="view-chat" class="app-view">

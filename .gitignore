@@ -22,10 +22,10 @@ nova_memory.json.migrated
 nova_memory.db
 nova_memory.db-shm
 nova_memory.db-wal
-nova_users.json
+# nova_users.json  ← tracked for Vercel seed data
 
 # ── ML Artifacts ────────────────────────────────
-ml/*.pkl
+# ml/*.pkl  ← tracked for Vercel ML inference
 
 # ── IDE / OS ────────────────────────────────────
 .vscode/

@@ -3236,6 +3236,201 @@ function toggleProfileDropdown() {
     dd.classList.toggle('open');
 }
 
+if (origResult) origResult.call(this, e);
+if (isVoiceViewActive()) {
+    // Build full transcript from ALL results to avoid duplication
+    let fullTranscript = '';
+    for (let i = 0; i < e.results.length; i++) {
+        fullTranscript += e.results[i][0].transcript;
+    }
+    fullTranscript = fullTranscript.trim();
+    if (fullTranscript) updateVoiceViewTranscript(fullTranscript);
+}
+    };
+
+recognition.onend = function (e) {
+    const hadText = voiceBuffer.trim();
+    if (origEnd) origEnd.call(this, e);
+    if (isVoiceViewActive()) {
+        if (hadText) {
+            setVoiceViewState('processing');
+            // sendVoiceMessage will navigate to chat
+        } else {
+            setVoiceViewState('idle');
+            updateVoiceViewTranscript('');
+        }
+    }
+};
+
+recognition.onerror = function (e) {
+    if (origError) origError.call(this, e);
+    if (isVoiceViewActive()) { setVoiceViewState('idle'); updateVoiceViewTranscript(''); }
+};
+}
+
+// ─── Voice View: in-page response handler (streaming + sentence TTS) ─────────
+// Override sendVoiceMessage: stay on voice view, stream LLM tokens, speak sentences as they arrive
+const _vvOrigSendVoiceMessage = (typeof sendVoiceMessage === 'function') ? sendVoiceMessage : null;
+sendVoiceMessage = async function (message) {
+    if (!isVoiceViewActive()) {
+        if (_vvOrigSendVoiceMessage) await _vvOrigSendVoiceMessage(message);
+        return;
+    }
+
+    const chatLog = document.getElementById('vv-chat-log');
+
+    // Create a message pair container
+    const pair = document.createElement('div');
+    pair.className = 'vv-chat-pair';
+
+    // Add user bubble
+    const userBubble = document.createElement('div');
+    userBubble.className = 'vv-chat-user';
+    userBubble.textContent = message;
+    pair.appendChild(userBubble);
+
+    // Add processing indicator for Nova
+    const novaBubble = document.createElement('div');
+    novaBubble.className = 'vv-chat-nova processing';
+    novaBubble.textContent = 'Thinking\u2026';
+    pair.appendChild(novaBubble);
+
+    if (chatLog) {
+        chatLog.appendChild(pair);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    // Hide the live transcript now
+    updateVoiceViewTranscript('');
+    setVoiceViewState('processing');
+
+    try {
+        const replyText = await sendVoiceStream(message, {
+            onToken(fullSoFar, _token) {
+                // Show streaming text in Nova bubble (live update)
+                novaBubble.className = 'vv-chat-nova';
+                const display = fullSoFar.length > 400 ? '\u2026' + fullSoFar.slice(-400) : fullSoFar;
+                novaBubble.textContent = display;
+                if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+            },
+            onSentence(_sentence) {
+                // TTS is auto-queued by the pipeline; update visual state
+                if (!isSpeaking) setVoiceViewState('speaking');
+            },
+            onDone(fullReply) {
+                // Final display — show full reply (trimmed for readability)
+                const displayReply = fullReply.length > 400 ? fullReply.slice(0, 400) + '\u2026' : fullReply;
+                novaBubble.textContent = displayReply;
+                if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+            },
+            onError(err) {
+                novaBubble.className = 'vv-chat-nova';
+                novaBubble.textContent = 'Could not reach NOVA \u2014 is the server running?';
+                setVoiceViewState('idle');
+                showToast('Could not reach NOVA \u2014 is the server running?', 'error');
+            },
+        });
+
+        if (replyText) {
+            saveToHistory(message, replyText);
+            setVoiceViewState('speaking');
+        } else {
+            setVoiceViewState('idle');
+        }
+
+    } catch (err) {
+        novaBubble.className = 'vv-chat-nova';
+        novaBubble.textContent = 'Could not reach NOVA \u2014 is the server running?';
+        setVoiceViewState('idle');
+        showToast('Could not reach NOVA \u2014 is the server running?', 'error');
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// ─── NOVA AUTH — User Session Integration
+// ═══════════════════════════════════════════════════════════
+
+async function novaLoadUser() {
+    try {
+        const res = await fetch('/auth/me');
+        if (!res.ok) {
+            // Not logged in — the server will have redirected at page load,
+            // but if somehow we're here, bounce to login.
+            window.location.href = '/login';
+            return;
+        }
+        const data = await res.json();
+        if (!data.ok || !data.user) { window.location.href = '/login'; return; }
+
+        const user = data.user;
+
+        // Populate sidebar user chip
+        const chip = document.getElementById('gc-user-chip');
+        const avatar = document.getElementById('gc-user-avatar');
+        const nameEl = document.getElementById('gc-user-name');
+        const emailEl = document.getElementById('gc-user-email');
+        if (chip) chip.style.display = 'flex';
+        if (avatar) avatar.textContent = (user.name || 'U').charAt(0).toUpperCase();
+        if (nameEl) nameEl.textContent = user.name || 'User';
+        if (emailEl) emailEl.textContent = user.email || '';
+
+        // Show logout button
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) logoutBtn.style.display = '';
+
+        // Greet user by first name on the welcome screen
+        const greeting = document.getElementById('gc-welcome-title') || document.querySelector('.gc-welcome-title');
+        if (greeting) {
+            const firstName = (user.name || 'friend').split(' ')[0];
+            greeting.innerHTML = `Hello, <span class="gc-name-highlight">${firstName}</span> — I'm <span class="gc-name-highlight">Nova</span>`;
+        }
+        // Also update home page greeting
+        const homeGreeting = document.getElementById('home-greeting');
+        if (homeGreeting) {
+            const firstName = (user.name || '').split(' ')[0];
+            const hour = new Date().getHours();
+            const greet = hour < 12 ? 'GOOD MORNING' : hour < 17 ? 'GOOD AFTERNOON' : hour < 21 ? 'GOOD EVENING' : 'GOOD NIGHT';
+            homeGreeting.textContent = firstName ? `${greet}, ${firstName.toUpperCase()}.` : greet + '.';
+        }
+
+        // Populate home page profile avatar + dropdown
+        const initial = (user.name || 'U').charAt(0).toUpperCase();
+        const profAvatar = document.getElementById('home-profile-avatar');
+        if (profAvatar) profAvatar.textContent = initial;
+        const profHeaderAvatar = document.getElementById('prof-header-avatar');
+        if (profHeaderAvatar) profHeaderAvatar.textContent = initial;
+        const profName = document.getElementById('prof-name');
+        if (profName) profName.textContent = user.name || 'User';
+        const profEmail = document.getElementById('prof-email');
+        if (profEmail) profEmail.textContent = user.email || '';
+
+    } catch (e) {
+        // Network error — still let user use the app (offline graceful)
+        console.warn('[NOVA] Could not reach /auth/me:', e.message);
+    }
+}
+
+async function novaLogout() {
+    try {
+        await fetch('/auth/logout', { method: 'POST' });
+    } catch { /* ignore */ }
+    window.location.href = '/login';
+}
+
+// Load user info and check document status when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    novaLoadUser();
+    checkDocumentStatus();  // Phase 8: restore active document indicator
+});
+
+// ─── Profile Dropdown Toggle ─────────────────────────────────────────────────
+function toggleProfileDropdown() {
+    const dd = document.getElementById('home-profile-dropdown');
+    if (!dd) return;
+    dd.classList.toggle('open');
+}
+
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
     const wrap = document.getElementById('home-profile-wrap');
@@ -3244,6 +3439,4 @@ document.addEventListener('click', (e) => {
         dd.classList.remove('open');
     }
 });
-// force update
-
-// force update
+// force updat

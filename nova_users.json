@@ -1,0 +1,47 @@
+{
+  "vinayakahn1357@gmail.com": {
+    "id": "6d87eee9-6ee8-4f2b-8444-76b90137de5d",
+    "name": "Vinayaka H N",
+    "email": "vinayakahn1357@gmail.com",
+    "hash": "",
+    "salt": "",
+    "provider": "google",
+    "created": 1773590854
+  },
+  "hero86117@gmail.com": {
+    "id": "1bc2bc88-c90c-4e0b-b07b-4b7ae07609c2",
+    "name": "Vinayaka H N",
+    "email": "hero86117@gmail.com",
+    "hash": "",
+    "salt": "",
+    "provider": "google",
+    "created": 1773839234
+  },
+  "vinayakgowda1357@gmail.com": {
+    "id": "a710db88-070c-445d-85c2-badece2ae7e4",
+    "name": "Vinayak Gowda",
+    "email": "vinayakgowda1357@gmail.com",
+    "hash": "",
+    "salt": "",
+    "provider": "google",
+    "created": 1773839828
+  },
+  "vinayakawatchshop@gmail.com": {
+    "id": "0a30799f-bc7a-4cfa-b411-d11c28614bdc",
+    "name": "Vinayak Watch",
+    "email": "vinayakawatchshop@gmail.com",
+    "hash": "",
+    "salt": "",
+    "provider": "google",
+    "created": 1774344975
+  },
+  "test@example.com": {
+    "id": "cc5824ad-9767-4301-84df-20a9bad636ec",
+    "name": "Test User",
+    "email": "test@example.com",
+    "hash": "4d639093d3af6a19bd116cf5b978c6bf97f2af86f2e70af28ea8c6c2c45c0464",
+    "salt": "fcbe9d250597434d8809a4ef8c41ebbc",
+    "provider": "email",
+    "created": 1774631032
+  }
+}

@@ -14,7 +14,7 @@ from flask import Flask
 
 from config import (
     BASE_DIR, FRONTEND_DIR, FLASK_SECRET_KEY, SESSION_LIFETIME_SECONDS,
-    NOVA_ENV, NOVA_LIVE_MODE, OLLAMA_URL, DATABASE_URL, REDIS_URL,
+    NOVA_ENV, NOVA_LIVE_MODE, OLLAMA_URL, DATABASE_URL, REDIS_URL, IS_VERCEL,
 )
 from utils.logger import get_logger
 from utils.errors import register_error_handlers
@@ -148,7 +148,13 @@ from services.workflow_engine import WorkflowEngine
 agent_runner     = AgentRunner(ai_service, tool_executor, memory_service)
 workflow_engine  = WorkflowEngine(ai_service, tool_executor)
 
-log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=%d)", 7)
+# Reduce agent steps on Vercel to avoid 60s timeout
+if IS_VERCEL:
+    import services.agent_runner as _ar
+    _ar.DEFAULT_MAX_STEPS = 3
+    log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=3, Vercel-limited)")
+else:
+    log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=%d)", 7)
 log.info("Phase 7 — WorkflowEngine: ACTIVE")
 
 # ─── Phase 8: Document Context Store ──────────────────────────────────────────
@@ -302,6 +308,9 @@ log.info("  Capabilities: %d (tools + plugins)", len(tool_executor.list_capabili
 log.info("═══════════════════════════════════════════════════════")
 log.info("All blueprints registered. NOVA v5 (Phase 7) ready.")
 
+# ─── Vercel Serverless Handler ────────────────────────────────────────────────
+handler = app
+
 # ─── Run ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.getenv("FLASK_PORT", 5000))
@@ -314,8 +323,8 @@ if __name__ == "__main__":
         print("  ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ")
         print("  ████╗  ██║██╔═══██╗██║   ██║██╔══██╗")
         print("  ██╔██╗ ██║██║   ██║██║   ██║███████║")
-        print("  ██║╚██╗██║██║   ██║╚██╗ ██╔╝██╔══██║")
-        print("  ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║")
+        print("  ██║╚██╗██║██║   ██║╚██  ██╔╝██╔══██║")
+        print("  ██║ ╚████║╚██████╔╝  ████╔╝ ██║  ██║")
         print("  ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝")
         print()
         print(f"  [NOVA v5] Waitress WSGI Server — Phase 7 Active")
