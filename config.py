@@ -141,6 +141,17 @@ HYBRID_MERGE_THRESHOLD = float(os.getenv("NOVA_HYBRID_MERGE_THRESHOLD", "0.15"))
 ENABLE_PERSONALITY_ML = os.getenv("ENABLE_PERSONALITY_ML", "true").lower() in ("true", "1", "yes")
 PERSONALITY_ML_CONFIDENCE = float(os.getenv("PERSONALITY_ML_CONFIDENCE", "0.6"))
 
+# ─── Phase 11: PDF Intelligence & Document-Aware Assistant ─────────────────────
+PDF_MAX_FILE_SIZE_LOCAL = int(os.getenv("PDF_MAX_FILE_SIZE", str(50 * 1024 * 1024)))  # 50MB local
+PDF_MAX_FILE_SIZE_VERCEL = 10 * 1024 * 1024                                            # 10MB serverless
+PDF_MAX_FILE_SIZE = PDF_MAX_FILE_SIZE_VERCEL if IS_VERCEL else PDF_MAX_FILE_SIZE_LOCAL
+PDF_MAX_DOCUMENTS_PER_SESSION = int(os.getenv("PDF_MAX_DOCUMENTS", "3"))
+PDF_CHUNK_SIZE = int(os.getenv("PDF_CHUNK_SIZE", "1500"))          # chars per chunk
+PDF_CHUNK_OVERLAP = int(os.getenv("PDF_CHUNK_OVERLAP", "200"))     # overlap between chunks
+PDF_TOP_K_CHUNKS = int(os.getenv("PDF_TOP_K_CHUNKS", "5"))        # chunks retrieved per query
+ENABLE_DOCUMENT_EMBEDDINGS = os.getenv("ENABLE_DOCUMENT_EMBEDDINGS", "true").lower() in ("true", "1", "yes")
+ENABLE_EXAM_MODE = os.getenv("ENABLE_EXAM_MODE", "true").lower() in ("true", "1", "yes")
+
 
 def get_settings():
     """Return the current mutable settings dict."""

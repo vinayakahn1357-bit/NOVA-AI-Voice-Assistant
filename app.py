@@ -157,11 +157,20 @@ else:
     log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=%d)", 7)
 log.info("Phase 7 — WorkflowEngine: ACTIVE")
 
-# ─── Phase 8: Document Context Store ──────────────────────────────────────────
+# ─── Phase 8→11: Document Context Store & Retrieval ─────────────────────────────
 from services.document_context import DocumentContextStore
+from services.document_retriever import create_retriever
+from services.smart_responder import SmartResponder
 
 document_store = DocumentContextStore()
-log.info("Phase 8 — DocumentContextStore: ACTIVE")
+document_retriever = create_retriever()
+smart_responder = SmartResponder()
+log.info("Phase 11 — DocumentContextStore: ACTIVE (multi-doc, max=%d)",
+         __import__('config').PDF_MAX_DOCUMENTS_PER_SESSION)
+log.info("Phase 11 — DocumentRetriever: ACTIVE (backend=%s)",
+         document_retriever.stats().get('backend', 'unknown') if hasattr(document_retriever, 'stats') else 'tfidf')
+log.info("Phase 11 — SmartResponder: ACTIVE (exam_mode=%s)",
+         'enabled' if __import__('config').ENABLE_EXAM_MODE else 'disabled')
 
 # ─── Phase 9: Personality Store ───────────────────────────────────────────────
 from services.personality_service import PersonalityStore
@@ -196,6 +205,8 @@ chat_controller     = ChatController(
     document_store=document_store,
     personality_store=personality_store,
     personality_model=personality_model,
+    retriever=document_retriever,
+    smart_responder=smart_responder,
 )
 
 # ─── Phase 6: Update Rate Limiters with Redis ─────────────────────────────────
@@ -253,7 +264,9 @@ import routes.chat as chat_routes
 chat_routes.init_app(chat_controller, cache_service,
                      pdf_service=pdf_service, ai_service=ai_service,
                      document_store=document_store,
-                     personality_store=personality_store)
+                     personality_store=personality_store,
+                     retriever=document_retriever,
+                     smart_responder=smart_responder)
 
 import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)
@@ -305,8 +318,15 @@ log.info("Phase 7 AI OS:")
 log.info("  AgentRunner:  ACTIVE (max_steps=7, tools=%d)", len(tool_executor.get_tools()))
 log.info("  Workflows:    ACTIVE")
 log.info("  Capabilities: %d (tools + plugins)", len(tool_executor.list_capabilities()))
+log.info("Phase 11 PDF Intelligence:")
+log.info("  Max PDF Size: %dMB (%s)", __import__('config').PDF_MAX_FILE_SIZE // (1024*1024),
+         'Vercel' if IS_VERCEL else 'local')
+log.info("  Multi-Doc:    max %d per session", __import__('config').PDF_MAX_DOCUMENTS_PER_SESSION)
+log.info("  Retriever:    TF-IDF (scikit-learn)")
+log.info("  Exam Mode:    %s", 'enabled' if __import__('config').ENABLE_EXAM_MODE else 'disabled')
+log.info("  Smart Resp:   ACTIVE (citations + suggestions)")
 log.info("═══════════════════════════════════════════════════════")
-log.info("All blueprints registered. NOVA v5 (Phase 7) ready.")
+log.info("All blueprints registered. NOVA v5 (Phase 11) ready.")
 
 # ─── Vercel Serverless Handler ────────────────────────────────────────────────
 handler = app
