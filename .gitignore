@@ -32,3 +32,10 @@ nova_memory.db-wal
 .idea/
 .DS_Store
 Thumbs.db
+
+# ── Debug / Scan Artifacts ──────────────────────
+*.scan.txt
+html_css_scan.txt
+scan_output.txt
+section_headers.txt
+html_handlers.txt

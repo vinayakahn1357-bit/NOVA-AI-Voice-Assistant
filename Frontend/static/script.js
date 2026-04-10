@@ -470,13 +470,22 @@ function appendUserMsg(chatBox, message) {
 
 function createThinkingBubble(chatBox) {
     const div = document.createElement('div');
-    div.className = 'message nova';
+    div.className = 'message nova skeleton-message';
     div.id = 'typing-indicator';
     div.innerHTML = `
         <div class="msg-avatar nova-avatar">N</div>
         <div class="msg-content">
-            <div class="msg-header"><span class="sender">Nova</span> <span class="processing-label">Thinking…</span></div>
-            <div class="msg-body"><span class="thinking-dots"><span></span><span></span><span></span></span></div>
+            <div class="msg-header">
+                <span class="sender">Nova</span>
+                <span class="processing-label">Thinking…</span>
+            </div>
+            <div class="msg-body skeleton-body">
+                <div class="skeleton-line skeleton-line-short"></div>
+                <div class="skeleton-line skeleton-line-full"></div>
+                <div class="skeleton-line skeleton-line-full"></div>
+                <div class="skeleton-line skeleton-line-medium"></div>
+                <div class="skeleton-line skeleton-line-short"></div>
+            </div>
         </div>`;
     chatBox.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;

@@ -21,6 +21,10 @@ import copy
 import requests
 from datetime import date
 
+from utils.logger import get_logger
+
+log = get_logger("nova_memory")
+
 if os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV"):
     DB_FILE      = "/tmp/nova_memory.db"
     LEGACY_JSON  = "/tmp/nova_memory.json"
@@ -83,10 +87,9 @@ class NovaMemory:
         self._init_db()
         self._migrate_legacy_json()
         stats = self.get_stats()
-        print(f"[NOVA Memory] SQLite ready — "
-              f"{stats['facts_count']} facts, "
-              f"{stats['interests_count']} interests, "
-              f"{stats['total_conversations']} conversations recorded.")
+        log.info("SQLite ready — %d facts, %d interests, %d conversations recorded.",
+                 stats['facts_count'], stats['interests_count'],
+                 stats['total_conversations'])
 
     # ── Schema init ───────────────────────────────────────────────────────────
 
@@ -163,7 +166,7 @@ class NovaMemory:
                     )
 
             self._conn.commit()
-            print("[NOVA Memory] Migrated legacy nova_memory.json → SQLite ✓")
+            log.info("Migrated legacy nova_memory.json to SQLite")
             # Rename the old file so we don't re-import
             os.rename(LEGACY_JSON, LEGACY_JSON + ".migrated")
 
@@ -302,7 +305,7 @@ class NovaMemory:
                     return (data.get("choices", [{}])[0]
                             .get("message", {}).get("content", "")).strip()
             except Exception as e:
-                print(f"[NOVA Memory] Groq extraction failed: {e}")
+                log.warning("Groq extraction failed: %s", e)
 
         # ── Try Ollama Cloud if configured ────────────────────────────
         cloud_key = provider_config.get("ollama_api_key", "")
@@ -321,7 +324,7 @@ class NovaMemory:
                 if r.status_code == 200:
                     return r.json().get("response", "").strip()
             except Exception as e:
-                print(f"[NOVA Memory] Ollama Cloud extraction failed: {e}")
+                log.warning("Ollama Cloud extraction failed: %s", e)
 
         # ── Fallback to local Ollama (skip on Vercel where OLLAMA_URL is None) ─
         if OLLAMA_URL:
@@ -336,7 +339,7 @@ class NovaMemory:
                 if r.status_code == 200:
                     return r.json().get("response", "").strip()
             except Exception as e:
-                print(f"[NOVA Memory] Local Ollama extraction failed: {e}")
+                log.warning("Local Ollama extraction failed: %s", e)
 
         return ""
 
@@ -420,7 +423,7 @@ Rules:
             self._merge_extracted(extracted)
 
         except Exception as e:
-            print(f"[NOVA Memory] Extraction error: {e}")
+            log.warning("Extraction error: %s", e)
 
     def _merge_extracted(self, extracted: dict):
         with self._lock:
@@ -466,8 +469,8 @@ Rules:
                     )
 
             self._conn.commit()
-            print(f"[NOVA Memory] Stored: {added} new facts, "
-                  f"{len(extracted.get('interests', []))} interests")
+            log.info("Stored: %d new facts, %d interests",
+                     added, len(extracted.get('interests', [])))
 
     def generate_daily_summary(self, conversation_log: list,
                                 model: str = "mistral",
@@ -505,9 +508,9 @@ Rules:
                     "(SELECT day FROM daily_summaries ORDER BY day DESC LIMIT 30)"
                 )
                 self._conn.commit()
-            print(f"[NOVA Memory] Daily summary saved for {today}")
+            log.info("Daily summary saved for %s", today)
         except Exception as e:
-            print(f"[NOVA Memory] Daily summary error: {e}")
+            log.warning("Daily summary error: %s", e)
 
     def reset(self):
         """Clear all learned memory."""
@@ -522,4 +525,4 @@ Rules:
                 UPDATE meta SET value = date('now') WHERE key = 'first_seen';
             """)
             self._conn.commit()
-        print("[NOVA Memory] Memory reset.")
+        log.info("Memory reset.")

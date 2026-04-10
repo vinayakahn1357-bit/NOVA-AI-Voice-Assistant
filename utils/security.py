@@ -268,21 +268,59 @@ auth_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 # ─── CORS Helper ──────────────────────────────────────────────────────────────
 
+# Configurable allowlist — override via ALLOWED_ORIGINS env var
+# Default: common local dev origins
+_ALLOWED_ORIGINS = None
+
+
+def _get_allowed_origins():
+    """Lazy-load allowed origins from config."""
+    global _ALLOWED_ORIGINS
+    if _ALLOWED_ORIGINS is None:
+        import os
+        raw = os.getenv("ALLOWED_ORIGINS", "")
+        if raw:
+            _ALLOWED_ORIGINS = {o.strip().rstrip("/") for o in raw.split(",") if o.strip()}
+        else:
+            # Sensible defaults for local development
+            _ALLOWED_ORIGINS = {
+                "http://localhost:5000",
+                "http://localhost:3000",
+                "http://127.0.0.1:5000",
+                "http://127.0.0.1:3000",
+            }
+            # Auto-add Vercel deployment URLs if available
+            vercel_url = os.getenv("VERCEL_URL")
+            if vercel_url:
+                _ALLOWED_ORIGINS.add(f"https://{vercel_url}")
+            vercel_project = os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
+            if vercel_project:
+                _ALLOWED_ORIGINS.add(f"https://{vercel_project}")
+    return _ALLOWED_ORIGINS
+
+
 def configure_cors(app):
     """Register CORS after_request handler on the Flask app."""
 
     @app.after_request
     def add_cors(response):
         origin = request.headers.get("Origin", "")
-        if origin:
+        allowed = _get_allowed_origins()
+
+        if origin and origin.rstrip("/") in allowed:
+            # Known origin — allow with credentials
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
-        else:
-            response.headers["Access-Control-Allow-Origin"] = "*"
+        elif not origin:
+            # Same-origin request (no Origin header) — allow
+            pass
+        # else: unknown origin → NO CORS headers → browser blocks the request
+
         response.headers["Access-Control-Allow-Headers"] = (
             "Content-Type, X-Session-Id, Authorization"
         )
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Vary"] = "Origin"  # Required for correct caching
         return response
 
     @app.route("/", defaults={"path": ""}, methods=["OPTIONS"])

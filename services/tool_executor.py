@@ -34,32 +34,90 @@ def tool(name, description):
 @tool("calculator", "Evaluate mathematical expressions safely")
 def tool_calculator(expression):
     """
-    Evaluate a math expression safely.
+    Evaluate a math expression safely using AST parsing.
     Supports: +, -, *, /, **, sqrt, sin, cos, tan, log, pi, e, abs, round
+    NO eval() — uses ast.parse() with a safe node walker.
     """
-    try:
-        # Clean the expression
-        expr = expression.strip()
-        # Remove any non-math characters for safety
-        allowed = set("0123456789+-*/().,%^ sincotaqrlgbdephu")
-        if not all(c in allowed or c.isspace() for c in expr.lower()):
-            return {"error": "Invalid characters in expression"}
+    import ast
+    import operator
 
-        # Safe math namespace
-        safe_ns = {
-            "abs": abs, "round": round, "min": min, "max": max,
-            "sqrt": math.sqrt, "pow": pow,
-            "sin": math.sin, "cos": math.cos, "tan": math.tan,
-            "log": math.log, "log10": math.log10, "log2": math.log2,
-            "pi": math.pi, "e": math.e,
-            "ceil": math.ceil, "floor": math.floor,
-            "factorial": math.factorial,
-        }
+    # Allowed binary operators
+    _OPS = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    # Allowed function names → callables
+    _SAFE_FUNCS = {
+        "abs": abs, "round": round, "min": min, "max": max,
+        "int": int, "float": float, "pow": pow,
+        "sqrt": math.sqrt,
+        "sin": math.sin, "cos": math.cos, "tan": math.tan,
+        "asin": math.asin, "acos": math.acos, "atan": math.atan,
+        "log": math.log, "log10": math.log10, "log2": math.log2,
+        "ceil": math.ceil, "floor": math.floor,
+        "factorial": math.factorial,
+    }
+
+    # Allowed constants
+    _SAFE_NAMES = {
+        "pi": math.pi,
+        "e": math.e,
+        "tau": math.tau,
+        "inf": math.inf,
+    }
+
+    def _safe_eval_node(node):
+        """Recursively evaluate an AST node — only safe math operations."""
+        # Numbers: 3, 4.5, etc.
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+
+        # Named constants: pi, e
+        if isinstance(node, ast.Name) and node.id in _SAFE_NAMES:
+            return _SAFE_NAMES[node.id]
+
+        # Unary operators: -5, +3
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
+            return _OPS[type(node.op)](_safe_eval_node(node.operand))
+
+        # Binary operators: 3 + 4, 2 ** 8
+        if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
+            left = _safe_eval_node(node.left)
+            right = _safe_eval_node(node.right)
+            # Safety: prevent huge exponents
+            if isinstance(node.op, ast.Pow) and isinstance(right, (int, float)) and abs(right) > 1000:
+                raise ValueError("Exponent too large (max 1000)")
+            return _OPS[type(node.op)](left, right)
+
+        # Function calls: sqrt(16), sin(3.14)
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _SAFE_FUNCS:
+                args = [_safe_eval_node(arg) for arg in node.args]
+                return _SAFE_FUNCS[node.func.id](*args)
+            raise ValueError("Unknown function: %s" % getattr(node.func, 'id', '?'))
+
+        raise ValueError("Unsupported expression element: %s" % type(node).__name__)
+
+    try:
+        expr = expression.strip()
+        if not expr:
+            return {"error": "Empty expression"}
 
         # Replace common notations
         expr = expr.replace("^", "**").replace("%", "/100")
 
-        result = eval(expr, {"__builtins__": {}}, safe_ns)
+        # Parse into AST and evaluate safely
+        tree = ast.parse(expr, mode="eval")
+        result = _safe_eval_node(tree.body)
+
         return {
             "result": result,
             "expression": expression.strip(),
@@ -67,8 +125,10 @@ def tool_calculator(expression):
         }
     except ZeroDivisionError:
         return {"error": "Division by zero"}
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         return {"error": "Cannot evaluate: %s" % str(e)}
+    except SyntaxError:
+        return {"error": "Invalid math expression"}
 
 
 @tool("system_info", "Get current system information")

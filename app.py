@@ -228,6 +228,7 @@ app.secret_key = FLASK_SECRET_KEY
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = SESSION_LIFETIME_SECONDS
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024   # 50MB — prevents memory exhaustion DoS
 
 if NOVA_LIVE_MODE:
     app.config["SESSION_COOKIE_SECURE"] = True

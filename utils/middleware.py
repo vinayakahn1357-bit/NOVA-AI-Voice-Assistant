@@ -46,6 +46,15 @@ def setup_middleware(app):
         # Security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # HSTS only in production (breaks local HTTP dev otherwise)
+        from config import NOVA_LIVE_MODE
+        if NOVA_LIVE_MODE:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
 
         return response
 

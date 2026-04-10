@@ -1449,6 +1449,81 @@ body {
     }
 }
 
+/* ─── Skeleton Loading Body ───────────────────────────────────────────── */
+.skeleton-message .processing-label {
+    animation: skeletonPulseText 1.8s ease-in-out infinite;
+}
+
+.skeleton-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0 2px;
+    min-width: 260px;
+}
+
+.skeleton-line {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(
+        90deg,
+        rgba(77, 168, 218, 0.08) 0%,
+        rgba(0, 229, 255, 0.18) 40%,
+        rgba(77, 168, 218, 0.08) 80%
+    );
+    background-size: 300% 100%;
+    animation: skeletonSweep 1.8s ease-in-out infinite;
+    position: relative;
+    overflow: hidden;
+}
+
+.skeleton-line::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(0, 229, 255, 0.12) 50%,
+        transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+/* Varying widths to mimic real text */
+.skeleton-line-full  { width: 100%; }
+.skeleton-line-medium { width: 75%; }
+.skeleton-line-short { width: 40%; }
+
+/* Staggered animation delays for natural feel */
+.skeleton-line:nth-child(1) { animation-delay: 0s; }
+.skeleton-line:nth-child(1)::after { animation-delay: 0s; }
+.skeleton-line:nth-child(2) { animation-delay: 0.12s; }
+.skeleton-line:nth-child(2)::after { animation-delay: 0.12s; }
+.skeleton-line:nth-child(3) { animation-delay: 0.24s; }
+.skeleton-line:nth-child(3)::after { animation-delay: 0.24s; }
+.skeleton-line:nth-child(4) { animation-delay: 0.36s; }
+.skeleton-line:nth-child(4)::after { animation-delay: 0.36s; }
+.skeleton-line:nth-child(5) { animation-delay: 0.48s; }
+.skeleton-line:nth-child(5)::after { animation-delay: 0.48s; }
+
+@keyframes skeletonSweep {
+    0%   { background-position: 100% 50%; }
+    100% { background-position: -100% 50%; }
+}
+
+@keyframes skeletonShimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@keyframes skeletonPulseText {
+    0%, 100% { opacity: 0.5; }
+    50%      { opacity: 1; }
+}
+
 /* ─── Typewriter Cursor ────────────────────────────────────────────────── */
 .typing-cursor::after {
     content: '▌';

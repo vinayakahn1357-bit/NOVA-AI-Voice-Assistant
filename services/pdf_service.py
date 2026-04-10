@@ -113,15 +113,15 @@ class PDFService:
         try:
             result = PDFService._extract_with_pdfplumber(file_bytes, filename, on_status)
         except Exception as primary_exc:
-            log.warning("pdfplumber failed: %s — trying PyPDF2 fallback", primary_exc)
+            log.warning("pdfplumber failed: %s — trying pypdf fallback", primary_exc)
             if on_status:
                 on_status("Primary parser failed. Trying fallback parser...")
 
-            # Try fallback parser (PyPDF2)
+            # Try fallback parser (pypdf)
             try:
                 result = PDFService._extract_with_pypdf2(file_bytes, filename, on_status)
             except Exception as fallback_exc:
-                log.error("Both parsers failed: pdfplumber=%s, PyPDF2=%s",
+                log.error("Both parsers failed: pdfplumber=%s, pypdf=%s",
                           primary_exc, fallback_exc)
                 raise ValueError(
                     f"Failed to read PDF with both parsers. "
@@ -183,12 +183,12 @@ class PDFService:
         file_bytes: bytes, filename: str,
         on_status: Callable[[str], None] | None = None,
     ) -> dict:
-        """Extract text using PyPDF2 (fallback parser)."""
-        from PyPDF2 import PdfReader
+        """Extract text using pypdf (fallback parser)."""
+        from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(file_bytes))
         total_pages = len(reader.pages)
-        log.info("PDF '%s': %d pages (PyPDF2 fallback)", filename or "upload", total_pages)
+        log.info("PDF '%s': %d pages (pypdf fallback)", filename or "upload", total_pages)
 
         pages_data = []
         for i, page in enumerate(reader.pages):
@@ -208,7 +208,7 @@ class PDFService:
         full_text = "\n\n".join(p["text"] for p in pages_data)
         cleaned = _clean_text(full_text)
 
-        log.info("PDF '%s': extracted %d chars from %d/%d pages (PyPDF2)",
+        log.info("PDF '%s': extracted %d chars from %d/%d pages (pypdf)",
                  filename, len(cleaned), len(pages_data), total_pages)
 
         return {
