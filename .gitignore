@@ -39,3 +39,5 @@ html_css_scan.txt
 scan_output.txt
 section_headers.txt
 html_handlers.txt
+
+nova_settings.json

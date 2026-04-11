@@ -195,23 +195,154 @@ class TFIDFRetriever(BaseRetriever):
             }
 
 
+# ─── Embedding Retriever (Semantic Search) ────────────────────────────────────
+
+class EmbeddingRetriever(BaseRetriever):
+    """
+    Semantic chunk retriever using sentence-transformers.
+    Uses all-MiniLM-L6-v2 (22MB, 384-dim, CPU-optimized).
+    Dramatically better at understanding meaning vs keyword-matching.
+
+    Lazy model loading: the model is only loaded on first index/retrieve call,
+    so importing this class has zero startup cost.
+    """
+
+    MODEL_NAME = "all-MiniLM-L6-v2"
+
+    def __init__(self):
+        self._model = None         # lazy-loaded
+        self._indexes: dict[str, dict] = {}  # doc_id → {embeddings, chunks}
+        self._lock = threading.Lock()
+        log.info("EmbeddingRetriever initialized (lazy model: %s)", self.MODEL_NAME)
+
+    def _get_model(self):
+        """Lazy-load the sentence-transformers model on first use."""
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+            log.info("Loading embedding model '%s'...", self.MODEL_NAME)
+            self._model = SentenceTransformer(self.MODEL_NAME)
+            log.info("Embedding model loaded (dim=%d)", self._model.get_sentence_embedding_dimension())
+        return self._model
+
+    def index_chunks(self, doc_id: str, chunks: list[dict]) -> None:
+        """Encode document chunks into dense embeddings."""
+        if not chunks:
+            log.warning("No chunks to index for doc %s", doc_id[:12])
+            return
+
+        model = self._get_model()
+        texts = [c["text"] for c in chunks]
+
+        # Batch encode (CPU-optimized)
+        embeddings = model.encode(texts, show_progress_bar=False, batch_size=32)
+
+        with self._lock:
+            self._indexes[doc_id] = {
+                "embeddings": embeddings,
+                "chunks": chunks,
+            }
+
+        log.info("Indexed doc %s: %d chunks (embedding dim=%d)",
+                 doc_id[:12], len(chunks), embeddings.shape[1])
+
+    def retrieve(self, doc_id: str, query: str, top_k: int = PDF_TOP_K_CHUNKS) -> list[dict]:
+        """Find top-k most relevant chunks using cosine similarity on embeddings."""
+        with self._lock:
+            index = self._indexes.get(doc_id)
+
+        if not index:
+            log.warning("No index for doc %s — returning empty", doc_id[:12])
+            return []
+
+        import numpy as np
+
+        model = self._get_model()
+        query_embedding = model.encode([query], show_progress_bar=False)
+
+        embeddings = index["embeddings"]
+        chunks = index["chunks"]
+
+        # Cosine similarity (embeddings are already normalized by default)
+        similarities = np.dot(embeddings, query_embedding.T).flatten()
+
+        # Get top-k indices sorted by score
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+
+        results = []
+        for idx in top_indices:
+            score = float(similarities[idx])
+            if score < 0.05:  # skip very low matches
+                continue
+            chunk = chunks[idx].copy()
+            chunk["score"] = round(score, 4)
+            results.append(chunk)
+
+        log.info("Retrieved %d/%d chunks for doc %s (top score=%.3f, backend=embedding)",
+                 len(results), len(chunks), doc_id[:12],
+                 results[0]["score"] if results else 0)
+
+        return results
+
+    def is_indexed(self, doc_id: str) -> bool:
+        with self._lock:
+            return doc_id in self._indexes
+
+    def remove(self, doc_id: str) -> bool:
+        with self._lock:
+            if doc_id in self._indexes:
+                del self._indexes[doc_id]
+                log.info("Removed embedding index for doc %s", doc_id[:12])
+                return True
+            return False
+
+    def clear(self) -> int:
+        with self._lock:
+            count = len(self._indexes)
+            self._indexes.clear()
+            log.info("All embedding indexes cleared (%d removed)", count)
+            return count
+
+    def stats(self) -> dict:
+        with self._lock:
+            return {
+                "indexed_documents": len(self._indexes),
+                "total_chunks": sum(
+                    len(idx["chunks"]) for idx in self._indexes.values()
+                ),
+                "backend": "sentence-transformers",
+                "model": self.MODEL_NAME,
+            }
+
+
 # ─── Factory ──────────────────────────────────────────────────────────────────
 
 def create_retriever() -> BaseRetriever:
     """
     Factory function to create the appropriate retriever.
-    Currently returns TFIDFRetriever.
-    Future: switch based on config or available dependencies.
+    Selection logic:
+        - RETRIEVER_BACKEND=tfidf      → always TF-IDF
+        - RETRIEVER_BACKEND=embeddings  → always embeddings (errors if not installed)
+        - RETRIEVER_BACKEND=auto (default) → embeddings if available, else TF-IDF
     """
+    import os
+    backend = os.getenv("RETRIEVER_BACKEND", "auto").lower().strip()
+
     if not ENABLE_DOCUMENT_EMBEDDINGS:
-        log.info("Document embeddings disabled — retriever will return raw chunks")
-        # Return TFIDFRetriever anyway; it just won't be called if disabled
+        log.info("Document embeddings disabled — using TFIDFRetriever")
         return TFIDFRetriever()
 
-    # Future extension point:
-    # if config.RETRIEVER_BACKEND == "sentence_transformers":
-    #     return SentenceTransformerRetriever()
-    # elif config.RETRIEVER_BACKEND == "openai":
-    #     return OpenAIEmbeddingRetriever()
+    if backend == "tfidf":
+        log.info("RETRIEVER_BACKEND=tfidf — using TFIDFRetriever")
+        return TFIDFRetriever()
 
-    return TFIDFRetriever()
+    if backend == "embeddings":
+        return EmbeddingRetriever()
+
+    # auto mode: try embeddings, fallback to TF-IDF
+    try:
+        import sentence_transformers  # noqa: F401
+        log.info("sentence-transformers available — using EmbeddingRetriever")
+        return EmbeddingRetriever()
+    except ImportError:
+        log.info("sentence-transformers not installed — falling back to TFIDFRetriever")
+        return TFIDFRetriever()

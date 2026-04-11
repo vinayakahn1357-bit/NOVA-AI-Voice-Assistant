@@ -1078,13 +1078,8 @@
                             </div>
                             <div class="settings-group">
                                 <label class="settings-label" style="font-size:0.75rem">Model</label>
-                                <select id="settings-hybrid-ollama-model" class="settings-select">
+                                <select id="settings-hybrid-ollama-model" class="settings-select" data-model-type="ollama">
                                     <option value="mistral">Mistral 7B</option>
-                                    <option value="llama3.2">Llama 3.2 3B</option>
-                                    <option value="llama3.1">Llama 3.1 8B</option>
-                                    <option value="gemma2">Gemma 2 9B</option>
-                                    <option value="phi3">Phi-3 Mini</option>
-                                    <option value="qwen2.5">Qwen 2.5 7B</option>
                                 </select>
                             </div>
                         </div>
@@ -1099,11 +1094,8 @@
                             </div>
                             <div class="settings-group">
                                 <label class="settings-label" style="font-size:0.75rem">Model</label>
-                                <select id="settings-hybrid-groq-model" class="settings-select">
+                                <select id="settings-hybrid-groq-model" class="settings-select" data-model-type="groq">
                                     <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Best)</option>
-                                    <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fast)</option>
-                                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-                                    <option value="gemma2-9b-it">Gemma 2 9B</option>
                                 </select>
                             </div>
                         </div>
@@ -1114,14 +1106,8 @@
                 <div id="ollama-settings">
                     <div class="settings-group">
                         <label class="settings-label">Ollama Model</label>
-                        <select id="settings-model" class="settings-select">
+                        <select id="settings-model" class="settings-select" data-model-type="ollama">
                             <option value="mistral">Mistral 7B</option>
-                            <option value="llama3.2">Llama 3.2 3B</option>
-                            <option value="llama3.1">Llama 3.1 8B</option>
-                            <option value="gemma2">Gemma 2 9B</option>
-                            <option value="phi3">Phi-3 Mini</option>
-                            <option value="qwen2.5">Qwen 2.5 7B</option>
-                            <option value="codellama">CodeLlama 7B</option>
                         </select>
                     </div>
                 </div>
@@ -1136,15 +1122,26 @@
                     </div>
                 </div>
                 <div class="settings-group">
+                    <label class="settings-label">Top P <span id="top-p-display"
+                            class="settings-value-display">0.90</span></label>
+                    <input type="range" id="settings-top-p" class="settings-slider" min="0" max="1" step="0.05"
+                        value="0.9"
+                        oninput="document.getElementById('top-p-display').textContent=parseFloat(this.value).toFixed(2)">
+                    <div class="settings-slider-labels">
+                        <span>Precise</span><span>Balanced</span><span>Diverse</span>
+                    </div>
+                </div>
+                <div class="settings-group">
                     <label class="settings-label">Max Tokens <span id="tokens-display"
                             class="settings-value-display">1024</span></label>
                     <input type="range" id="settings-tokens" class="settings-slider" min="64" max="4096" step="64"
                         value="1024" oninput="document.getElementById('tokens-display').textContent=this.value">
                 </div>
                 <div class="settings-group">
-                    <label class="settings-label">System Prompt</label>
+                    <label class="settings-label">System Prompt <span class="settings-value-display" id="sp-char-count"></span></label>
                     <textarea id="settings-system-prompt" class="settings-textarea"
-                        placeholder="Describe Nova's personality?" rows="4"></textarea>
+                        placeholder="Describe Nova's personality…" rows="4" maxlength="2000"
+                        oninput="document.getElementById('sp-char-count').textContent=this.value.length+'/2000'"></textarea>
                 </div>
                 <!-- Phase 9: Personality Selector -->
                 <div class="settings-group">
@@ -1223,7 +1220,11 @@
         </div>
     </div>
 
-    <script src="/static/script.js?v=20260321"></script>
+    <!-- Extracted modules (loaded before script.js so globals are available) -->
+    <script src="/static/modules/toast.js?v=20260410"></script>
+    <script src="/static/modules/markdown.js?v=20260410"></script>
+    <script src="/static/modules/chatbubbles.js?v=20260410"></script>
+    <script src="/static/script.js?v=20260410"></script>
 </body>
 
 </html>

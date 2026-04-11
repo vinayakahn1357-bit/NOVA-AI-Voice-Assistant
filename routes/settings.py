@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify, session
 from controllers.settings_controller import (
     get_current_settings, update_settings, list_models,
 )
-from utils.security import get_user_role, is_admin
+from utils.security import get_user_role, is_admin, login_required
 from utils.logger import get_logger
 
 log = get_logger("routes.settings")
@@ -18,6 +18,7 @@ settings_bp = Blueprint("settings", __name__)
 
 
 @settings_bp.route("/settings", methods=["GET", "POST"])
+@login_required
 def settings():
     email = session.get("user_email", "anonymous")
     role = get_user_role()
@@ -34,5 +35,6 @@ def settings():
 
 
 @settings_bp.route("/models")
+@login_required
 def models():
     return jsonify(list_models())

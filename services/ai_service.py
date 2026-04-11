@@ -8,6 +8,8 @@ adaptive intelligence, model validation, and latency logging.
 import json
 import time
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from config import (
     get_settings, NOVA_ENV, NOVA_LIVE_MODE, OLLAMA_URL,
@@ -47,6 +49,21 @@ class AIService:
         self._router = model_router
         self._tracker = performance_tracker
 
+        # ── Shared HTTP session with connection pooling ────────────────────
+        # Eliminates TCP+TLS handshake per call (~100-200ms savings)
+        self._http = requests.Session()
+        _adapter = HTTPAdapter(
+            pool_connections=10,   # number of hosts to keep connections for
+            pool_maxsize=20,       # max connections per host
+            max_retries=Retry(
+                total=0,           # retries handled by our own retry_handler
+                raise_on_status=False,
+            ),
+        )
+        self._http.mount("https://", _adapter)
+        self._http.mount("http://", _adapter)
+        log.info("HTTP session pool initialized (pool_connections=10, pool_maxsize=20)")
+
     # --- Provider Checks ---
 
     @staticmethod
@@ -59,9 +76,8 @@ class AIService:
 
     # --- Low-Level Provider Calls (with retry) ---
 
-    @staticmethod
     @with_retry(label="ollama_local")
-    def _call_ollama_local(full_prompt, stream=False):
+    def _call_ollama_local(self, full_prompt, stream=False):
         """Call local Ollama. Only allowed in local ENV."""
         if NOVA_ENV != "local":
             raise ConnectionError("Ollama local is disabled in production")
@@ -80,7 +96,7 @@ class AIService:
                 "repeat_penalty": 1.1,
             }
         }
-        return requests.post(OLLAMA_URL, json=payload, stream=stream, timeout=LOCAL_TIMEOUT)
+        return self._http.post(OLLAMA_URL, json=payload, stream=stream, timeout=LOCAL_TIMEOUT)
 
     @with_retry(label="ollama_cloud")
     def _call_ollama_cloud(self, full_prompt, stream=False, model_override=""):
@@ -134,8 +150,8 @@ class AIService:
         if settings["ollama_api_key"]:
             headers["Authorization"] = "Bearer " + settings["ollama_api_key"]
 
-        r = requests.post(cloud_url, json=payload, headers=headers,
-                          stream=stream, timeout=API_TIMEOUT)
+        r = self._http.post(cloud_url, json=payload, headers=headers,
+                            stream=stream, timeout=API_TIMEOUT)
 
         # Handle model-not-found in 200-with-error-body
         if not stream and r.status_code == 200:
@@ -150,16 +166,15 @@ class AIService:
                             fallback_model = available[0]
                             log.warning("Retrying with fallback model: '%s'", fallback_model)
                             payload["model"] = fallback_model
-                            r = requests.post(cloud_url, json=payload, headers=headers,
-                                              stream=stream, timeout=API_TIMEOUT)
+                            r = self._http.post(cloud_url, json=payload, headers=headers,
+                                                stream=stream, timeout=API_TIMEOUT)
             except (ValueError, KeyError):
                 pass
 
         return r
 
-    @staticmethod
     @with_retry(label="groq")
-    def _call_groq(messages, stream=False, model_override=""):
+    def _call_groq(self, messages, stream=False, model_override=""):
         """Call Groq API with retry logic."""
         settings = get_settings()
         groq_model = model_override or (
@@ -179,8 +194,8 @@ class AIService:
             "Authorization": "Bearer " + settings["groq_api_key"],
             "Content-Type": "application/json",
         }
-        return requests.post(GROQ_API_URL, json=payload, headers=headers,
-                             stream=stream, timeout=API_TIMEOUT)
+        return self._http.post(GROQ_API_URL, json=payload, headers=headers,
+                               stream=stream, timeout=API_TIMEOUT)
 
     # --- Resolve Provider ---
 

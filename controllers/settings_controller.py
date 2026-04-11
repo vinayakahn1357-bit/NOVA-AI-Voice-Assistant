@@ -6,8 +6,9 @@ API keys are NEVER sent to the frontend — only has_*_key booleans.
 """
 
 import requests
+from requests.adapters import HTTPAdapter
 
-from config import get_settings, NOVA_LIVE_MODE, NOVA_ENV, DEFAULT_SYSTEM_PROMPT
+from config import get_settings, NOVA_LIVE_MODE, NOVA_ENV, DEFAULT_SYSTEM_PROMPT, save_settings_to_disk
 from utils.logger import get_logger
 
 log = get_logger("settings")
@@ -93,7 +94,7 @@ def update_settings(data, role="user"):
     if "num_predict" in data:
         settings["num_predict"] = max(64, min(4096, int(data["num_predict"])))
     if "system_prompt" in data:
-        sp = data["system_prompt"].strip()
+        sp = str(data["system_prompt"]).strip()[:2000]  # max 2000 chars
         settings["system_prompt"] = sp if sp else DEFAULT_SYSTEM_PROMPT
     if "groq_model" in data:
         settings["groq_model"] = str(data["groq_model"])
@@ -153,6 +154,9 @@ def update_settings(data, role="user"):
     log.info("Settings updated: provider=%s model=%s role=%s blocked=%s",
              settings["provider"], settings["model"], role, blocked_fields or "none")
 
+    # Persist non-sensitive settings to disk
+    save_settings_to_disk()
+
     result = {
         "status": "ok",
         "role": role,
@@ -172,42 +176,45 @@ def update_settings(data, role="user"):
     return result
 
 
+# Pooled HTTP session for model listing (Fix #11)
+_model_session = requests.Session()
+_model_session.mount("http://", HTTPAdapter(pool_connections=2, pool_maxsize=4))
+_model_session.mount("https://", HTTPAdapter(pool_connections=2, pool_maxsize=4))
+
+
 def list_models():
     """List available models for the current provider."""
     settings = get_settings()
     provider = settings["provider"]
 
+    groq_models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
+    ]
+
     if provider == "groq":
-        groq_models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama3-70b-8192",
-            "llama3-8b-8192",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it",
-        ]
         return {"models": groq_models, "provider": "groq"}
 
-    if provider == "ollama_cloud":
-        try:
-            tags_url = settings["ollama_cloud_url"].replace("/api/generate", "/api/tags")
-            cloud_headers = {"Authorization": "Bearer " + settings["ollama_api_key"]}
-            r = requests.get(tags_url, headers=cloud_headers, timeout=8)
-            if r.status_code == 200:
-                models = [m["name"] for m in r.json().get("models", [])]
-                if models:
-                    return {"models": models, "provider": "ollama_cloud"}
-        except Exception:
-            pass
+    if provider == "hybrid":
+        # Return both sets for hybrid mode
+        ollama = _fetch_ollama_models(settings)
         return {
-            "models": ["mistral", "llama3", "gemma2", "phi3", "deepseek-r1"],
-            "provider": "ollama_cloud",
+            "models": ollama,
+            "provider": "ollama",
+            "groq_models": groq_models,
         }
+
+    if provider == "ollama_cloud":
+        return {"models": _fetch_ollama_models(settings), "provider": "ollama_cloud"}
 
     # Local Ollama
     if NOVA_ENV == "local":
         try:
-            r = requests.get("http://localhost:11434/api/tags", timeout=5)
+            r = _model_session.get("http://localhost:11434/api/tags", timeout=5)
             if r.status_code == 200:
                 models = [m["name"] for m in r.json().get("models", [])]
                 return {"models": models, "provider": "ollama"}
@@ -218,3 +225,18 @@ def list_models():
         "models": ["mistral", "llama3", "gemma2", "phi3", "codellama"],
         "provider": "ollama",
     }
+
+
+def _fetch_ollama_models(settings):
+    """Fetch model list from Ollama Cloud API."""
+    try:
+        tags_url = settings["ollama_cloud_url"].replace("/api/generate", "/api/tags")
+        cloud_headers = {"Authorization": "Bearer " + settings["ollama_api_key"]}
+        r = _model_session.get(tags_url, headers=cloud_headers, timeout=8)
+        if r.status_code == 200:
+            models = [m["name"] for m in r.json().get("models", [])]
+            if models:
+                return models
+    except Exception:
+        pass
+    return ["mistral", "llama3", "gemma2", "phi3", "deepseek-r1"]

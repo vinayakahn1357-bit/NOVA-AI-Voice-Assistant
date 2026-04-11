@@ -73,147 +73,14 @@ let isGenerating = false;     // true while waiting for / receiving a response
 let pendingPdfFile = null;    // File object for PDF upload
 if (_isVercelDeploy) console.log('[NOVA] Vercel detected — using non-streaming mode for reliability');
 
-// ─── Utilities ─────────────────────────────────────────────────────────────────
-
-function getTimestamp() {
-    return new Date().toLocaleString([], {
-        month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-}
-
-// ─── Markdown → HTML renderer (enhanced) ─────────────────────────────────────
-function renderMarkdown(text) {
-    if (!text) return '';
-
-    // Split into code-block segments and normal segments
-    const parts = [];
-    let lastIndex = 0;
-    const codeBlockRe = /```(\w*)\n?([\s\S]*?)```/g;
-    let match;
-
-    while ((match = codeBlockRe.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-            parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
-        }
-        parts.push({ type: 'code', lang: match[1] || 'plaintext', content: match[2] });
-        lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-        parts.push({ type: 'text', content: text.slice(lastIndex) });
-    }
-
-    return parts.map(part => {
-        if (part.type === 'code') {
-            const lang = part.lang || 'plaintext';
-            const escaped = part.content
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const highlighted = (typeof hljs !== 'undefined' && hljs.getLanguage(lang))
-                ? hljs.highlight(part.content, { language: lang, ignoreIllegals: true }).value
-                : escaped;
-            return `<div class="code-block-wrapper">
-                <div class="code-block-header">
-                    <span class="code-lang">${lang}</span>
-                    <button class="code-copy-btn" onclick="copyCode(this)" title="Copy code">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                        </svg>
-                        Copy
-                    </button>
-                </div>
-                <pre><code class="hljs language-${lang}">${highlighted}</code></pre>
-            </div>`;
-        }
-
-        // Process inline text
-        let html = part.content
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/^### (.+)$/gm, '<h5 class="md-h5">$1</h5>')
-            .replace(/^## (.+)$/gm, '<h4 class="md-h4">$1</h4>')
-            .replace(/^# (.+)$/gm, '<h3 class="md-h3">$1</h3>')
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-            .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="md-link">$1</a>')
-            .replace(/^---+$/gm, '<hr class="md-hr">')
-            .replace(/^\d+\.\s+(.+)$/gm, '<li class="ol-item">$1</li>')
-            .replace(/^[-•*]\s+(.+)$/gm, '<li class="ul-item">$1</li>');
-
-        // Wrap consecutive list items
-        html = html.replace(/(<li class="ul-item">.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
-        html = html.replace(/(<li class="ol-item">.*<\/li>\n?)+/g, m => `<ol>${m}</ol>`);
-
-        // Convert newlines to <br> (but not inside tags)
-        html = html.replace(/\n/g, '<br>');
-        return html;
-    }).join('');
-}
-
-// Convert markdown to plain text for TTS
-function stripForSpeech(text) {
-    return text
-        .replace(/```[\s\S]*?```/g, 'code block')
-        .replace(/`([^`]+)`/g, '$1')
-        .replace(/\*\*(.+?)\*\*/g, '$1')
-        .replace(/\*(.+?)\*/g, '$1')
-        .replace(/^[-•*]\s+/gm, '')
-        .replace(/^\d+\.\s+/gm, '')
-        .replace(/^#{1,3}\s+/gm, '')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .replace(/\n+/g, ' ')
-        .trim();
-}
-
-// ─── Copy Code Button ─────────────────────────────────────────────────────────
-function copyCode(btn) {
-    const code = btn.closest('.code-block-wrapper').querySelector('code');
-    const text = code.innerText || code.textContent;
-    navigator.clipboard.writeText(text).then(() => {
-        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
-        btn.style.color = 'var(--core-cyan)';
-        setTimeout(() => {
-            btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
-            btn.style.color = '';
-        }, 2000);
-    }).catch(() => showToast('Copy failed — please copy manually', 'error'));
-}
-
-// ─── Copy Message Button ──────────────────────────────────────────────────────
-function copyMessage(btn) {
-    const msgBody = btn.closest('.message').querySelector('.msg-body');
-    const text = msgBody.innerText || msgBody.textContent;
-    navigator.clipboard.writeText(text).then(() => {
-        btn.title = 'Copied!';
-        btn.style.color = 'var(--core-cyan)';
-        showToast('Message copied to clipboard', 'success');
-        setTimeout(() => { btn.title = 'Copy reply'; btn.style.color = ''; }, 2000);
-    }).catch(() => showToast('Copy failed', 'error'));
-}
-
-// ─── Toast Notification System ────────────────────────────────────────────────
-function showToast(message, type = 'info') {
-    // type: 'info' | 'success' | 'error' | 'warning'
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    const icons = { info: 'ℹ️', success: '✅', error: '❌', warning: '⚠️' };
-    toast.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ️'}</span><span class="toast-msg">${message}</span>`;
-    container.appendChild(toast);
-
-    // Animate in
-    requestAnimationFrame(() => toast.classList.add('toast-show'));
-
-    // Remove after 3.5s
-    setTimeout(() => {
-        toast.classList.remove('toast-show');
-        toast.classList.add('toast-hide');
-        setTimeout(() => toast.remove(), 350);
-    }, 3500);
-}
+// ─── Extracted to modules/ ─────────────────────────────────────────────────────
+// getTimestamp()   → modules/chatbubbles.js
+// renderMarkdown() → modules/markdown.js
+// stripForSpeech() → modules/markdown.js
+// copyCode()       → modules/markdown.js
+// copyMessage()    → modules/markdown.js
+// showToast()      → modules/toast.js
+// escapeHtml()     → modules/markdown.js
 
 // ─── Waveform ─────────────────────────────────────────────────────────────────
 function createWaveform() {
@@ -315,9 +182,7 @@ function renderHistoryList() {
     list.innerHTML = clearAllBtn + items;
 }
 
-function escapeHtml(str) {
-    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// escapeHtml() → modules/markdown.js
 
 function deleteHistorySession(sessionId) {
     chatSessions = chatSessions.filter(s => s.id !== sessionId);
@@ -456,79 +321,11 @@ function typewriterEffect(element, rawText, onComplete) {
 }
 
 // ─── DOM Helpers ──────────────────────────────────────────────────────────────
-function appendUserMsg(chatBox, message) {
-    const div = document.createElement('div');
-    div.className = 'message user';
-    div.title = getTimestamp();
-    div.innerHTML = `
-        <div class="msg-avatar user-avatar">U</div>
-        <div class="msg-content">
-            <div class="msg-body">${renderMarkdown(message)}</div>
-        </div>`;
-    chatBox.appendChild(div);
-}
-
-function createThinkingBubble(chatBox) {
-    const div = document.createElement('div');
-    div.className = 'message nova skeleton-message';
-    div.id = 'typing-indicator';
-    div.innerHTML = `
-        <div class="msg-avatar nova-avatar">N</div>
-        <div class="msg-content">
-            <div class="msg-header">
-                <span class="sender">Nova</span>
-                <span class="processing-label">Thinking…</span>
-            </div>
-            <div class="msg-body skeleton-body">
-                <div class="skeleton-line skeleton-line-short"></div>
-                <div class="skeleton-line skeleton-line-full"></div>
-                <div class="skeleton-line skeleton-line-full"></div>
-                <div class="skeleton-line skeleton-line-medium"></div>
-                <div class="skeleton-line skeleton-line-short"></div>
-            </div>
-        </div>`;
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
-    return div;
-}
-
-function appendNovaBubble(chatBox, time) {
-    const responseDiv = document.createElement('div');
-    responseDiv.className = 'message nova';
-    responseDiv.title = time || getTimestamp();
-    const bodyEl = document.createElement('div');
-    bodyEl.className = 'msg-body';
-
-    const copyBtn = `<button class="msg-copy-btn" onclick="copyMessage(this)" title="Copy reply">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
-    </button>`;
-
-    responseDiv.innerHTML = `
-        <div class="msg-avatar nova-avatar">N</div>
-        <div class="msg-content">
-            <div class="msg-header"><span class="sender">Nova</span>${copyBtn}</div>
-        </div>`;
-    responseDiv.querySelector('.msg-content').appendChild(bodyEl);
-    chatBox.appendChild(responseDiv);
-    chatBox.scrollTop = chatBox.scrollHeight;
-    return bodyEl;
-}
-
-function appendErrorBubble(chatBox, errorMsg) {
-    const errDiv = document.createElement('div');
-    errDiv.className = 'message nova error-msg';
-    const msg = errorMsg || 'Connection lost. Is the Flask server running?';
-    errDiv.innerHTML = `
-        <div class="msg-avatar nova-avatar" style="background:rgba(255,75,92,0.3);border-color:rgba(255,75,92,0.6);">!</div>
-        <div class="msg-content">
-            <div class="msg-header"><span class="sender" style="color:#ff4b5c;">System Error</span></div>
-            <div class="msg-body">${escapeHtml(msg)}</div>
-        </div>`;
-    chatBox.appendChild(errDiv);
-}
+// ─── Chat bubbles extracted to modules/chatbubbles.js ─────────────────────────
+// appendUserMsg()      → modules/chatbubbles.js
+// createThinkingBubble() → modules/chatbubbles.js
+// appendNovaBubble()   → modules/chatbubbles.js
+// appendErrorBubble()  → modules/chatbubbles.js
 
 function setSendState(sending) {
     isGenerating = sending;
@@ -1638,8 +1435,9 @@ async function loadAvailableModels() {
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
-    model: 'llama-3.3-70b-versatile',
+    model: 'mistral',
     temperature: 0.75,
+    top_p: 0.9,
     num_predict: 1024,
     system_prompt: '',
     stream_mode: true,
@@ -1670,9 +1468,55 @@ async function openSettings() {
         currentProvider = 'hybrid';
     }
 
-    // ── Step 4: Now safe to load the rest of the settings UI ────────────────
+    // ── Step 4: Dynamically populate model dropdowns ──────────────────────
+    await fetchAndPopulateModels();
+
+    // ── Step 5: Now safe to load the rest of the settings UI ────────────────
     loadSettingsIntoUI();
     document.getElementById('settings-overlay').classList.add('open');
+}
+
+// ─── Dynamic Model Loading (Fix #10) ─────────────────────────────────────────
+let _cachedModels = null;
+let _cachedModelsProvider = null;
+
+async function fetchAndPopulateModels() {
+    try {
+        const r = await fetch('/models');
+        if (!r.ok) return;
+        const data = await r.json();
+        const models = data.models || [];
+        const groqModels = data.groq_models || [];
+        const provider = data.provider || '';
+
+        // Only repopulate if data changed
+        const key = provider + ':' + models.join(',') + ':' + groqModels.join(',');
+        if (_cachedModels === key) return;
+        _cachedModels = key;
+        _cachedModelsProvider = provider;
+
+        // Helper: populate a set of selects
+        const fillSelects = (type, list) => {
+            if (!list.length) return;
+            document.querySelectorAll(`select[data-model-type="${type}"]`).forEach(select => {
+                const currentVal = select.value;
+                select.innerHTML = list.map(m =>
+                    `<option value="${m}">${m}</option>`
+                ).join('');
+                if (list.includes(currentVal)) select.value = currentVal;
+            });
+        };
+
+        if (provider === 'groq') {
+            fillSelects('groq', models);
+        } else {
+            fillSelects('ollama', models);
+        }
+        // Hybrid: backend returns groq_models separately
+        if (groqModels.length) {
+            fillSelects('groq', groqModels);
+        }
+    } catch { /* /models unavailable — keep existing options */ }
 }
 
 function closeSettings() {
@@ -1726,34 +1570,37 @@ function loadSettingsIntoUI() {
     const tokEl = document.getElementById('settings-tokens');
     tokEl.value = s.num_predict;
     document.getElementById('tokens-display').textContent = s.num_predict;
+    // Top P slider
+    const topPEl = document.getElementById('settings-top-p');
+    if (topPEl) {
+        topPEl.value = s.top_p || 0.9;
+        document.getElementById('top-p-display').textContent = parseFloat(s.top_p || 0.9).toFixed(2);
+    }
     document.getElementById('settings-system-prompt').value = s.system_prompt;
     setStreamMode(s.stream_mode !== false);
 
     // Provider fields — upgrade 'ollama' to 'hybrid' if live mode is active
     const savedProvider = (novaLiveMode && s.provider === 'ollama') ? 'hybrid' : (s.provider || 'hybrid');
     setProvider(savedProvider);
-    // Groq
+    // Groq (API keys NOT loaded from localStorage — they are never stored there)
     const groqKeyEl = document.getElementById('settings-groq-key');
-    if (groqKeyEl && s.groq_api_key) groqKeyEl.value = s.groq_api_key;
+    if (groqKeyEl) groqKeyEl.value = '';  // keys must be re-entered per session
     const groqModelEl = document.getElementById('settings-groq-model');
     if (groqModelEl && s.groq_model) groqModelEl.value = s.groq_model;
     // Ollama Cloud
     const ollamaKeyEl = document.getElementById('settings-ollama-key');
-    if (ollamaKeyEl && s.ollama_api_key) ollamaKeyEl.value = s.ollama_api_key;
+    if (ollamaKeyEl) ollamaKeyEl.value = '';  // keys must be re-entered per session
     const ollamaUrlEl = document.getElementById('settings-ollama-url');
     if (ollamaUrlEl) ollamaUrlEl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
-    // Hybrid fields — if the specific hybrid fields are empty, fall back to
-    // the canonical shared keys already saved (so settings round-trip cleanly)
-    const savedOllamaKey = s.ollama_api_key || '';
-    const savedGroqKey = s.groq_api_key || '';
+    // Hybrid fields — keys are NOT in localStorage (security fix)
     const hOllamaKey = document.getElementById('settings-hybrid-ollama-key');
-    if (hOllamaKey) hOllamaKey.value = s.ollama_api_key || '';
+    if (hOllamaKey) hOllamaKey.value = '';  // keys must be re-entered per session
     const hOllamaUrl = document.getElementById('settings-hybrid-ollama-url');
     if (hOllamaUrl) hOllamaUrl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
     const hOllamaModel = document.getElementById('settings-hybrid-ollama-model');
     if (hOllamaModel && s.hybrid_ollama_model) hOllamaModel.value = s.hybrid_ollama_model;
     const hGroqKey = document.getElementById('settings-hybrid-groq-key');
-    if (hGroqKey) hGroqKey.value = s.groq_api_key || '';
+    if (hGroqKey) hGroqKey.value = '';  // keys must be re-entered per session
     const hGroqModel = document.getElementById('settings-hybrid-groq-model');
     if (hGroqModel && s.hybrid_groq_model) hGroqModel.value = s.hybrid_groq_model;
 
@@ -1793,27 +1640,37 @@ async function saveSettings() {
         ? (h_ollama_url || ollama_cloud_url)
         : (ollama_cloud_url || h_ollama_url)) || 'https://api.ollama.com/api/generate';
 
+    // Save non-sensitive settings to localStorage (API keys are NEVER stored locally)
     const settings = {
         model, temperature, num_predict, system_prompt, stream_mode: isStreamMode,
-        provider, groq_api_key: final_groq_key, groq_model,
-        ollama_api_key: final_ollama_key, ollama_cloud_url: final_ollama_url,
+        provider, groq_model, ollama_cloud_url: final_ollama_url,
         hybrid_ollama_model, hybrid_groq_model
     };
     localStorage.setItem('nova_settings', JSON.stringify(settings));
 
-    // Sync with backend
+    // Sync with backend (include top_p)
+    let backendWarning = '';
     try {
-        await fetch('/settings', {
+        const resp = await fetch('/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model, temperature, num_predict, system_prompt, provider,
+                model, temperature, top_p: parseFloat(document.getElementById('settings-top-p')?.value || '0.9'),
+                num_predict, system_prompt, provider,
                 groq_api_key: final_groq_key, groq_model,
                 ollama_api_key: final_ollama_key, ollama_cloud_url: final_ollama_url,
                 hybrid_ollama_model, hybrid_groq_model,
             }),
         });
-    } catch { }
+        if (resp.ok) {
+            const result = await resp.json();
+            if (result.blocked_fields && result.blocked_fields.length > 0) {
+                backendWarning = result.message || ('Blocked: ' + result.blocked_fields.join(', '));
+            }
+        } else if (resp.status === 401) {
+            backendWarning = 'Not authenticated — settings saved locally only';
+        }
+    } catch { backendWarning = 'Backend unreachable — settings saved locally only'; }
 
     const activeModel = provider === 'groq' ? groq_model
         : provider === 'hybrid' ? `${hybrid_ollama_model} / ${hybrid_groq_model}`
@@ -1825,6 +1682,9 @@ async function saveSettings() {
             : provider === 'ollama_cloud' ? '🌐 Ollama Cloud'
                 : '🖥️ Ollama';
     showToast(`Settings saved! Provider: ${providerLabel} ✓`, 'success');
+    if (backendWarning) {
+        setTimeout(() => showToast(backendWarning, 'warning'), 500);
+    }
 }
 
 async function resetSettings() {
@@ -1839,7 +1699,7 @@ async function resetSettings() {
                 temperature: DEFAULT_SETTINGS.temperature,
                 num_predict: DEFAULT_SETTINGS.num_predict,
                 system_prompt: '',
-                provider: 'groq',
+                provider: DEFAULT_SETTINGS.provider,
             }),
         });
     } catch { }
@@ -1847,7 +1707,7 @@ async function resetSettings() {
     try {
         await fetch('/settings/personality', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+            headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
             body: JSON.stringify({ personality: 'default' }),
         });
     } catch { }
@@ -1875,7 +1735,7 @@ async function setPersonality(mode) {
     try {
         const r = await fetch('/settings/personality', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+            headers: { 'Content-Type': 'application/json', 'X-Session-Id': novaSessionId },
             body: JSON.stringify({ personality: mode }),
         });
         if (r.ok) {
@@ -1899,7 +1759,7 @@ async function loadPersonality() {
     // Try backend first, fall back to localStorage
     try {
         const r = await fetch('/settings/personality', {
-            headers: { 'X-Session-Id': sessionId },
+            headers: { 'X-Session-Id': novaSessionId },
         });
         if (r.ok) {
             const data = await r.json();
@@ -1915,9 +1775,9 @@ async function loadPersonality() {
 }
 
 async function applySavedSettings() {
-    const saved = JSON.parse(localStorage.getItem('nova_settings') || '{}');
+    let saved = JSON.parse(localStorage.getItem('nova_settings') || '{}');
 
-    // ── Fetch live_mode from backend to know if Ollama Local is allowed ─────────
+    // ── Fetch live_mode and backend settings ─────────────────────────────────
     try {
         const r = await fetch('/settings');
         if (r.ok) {
@@ -1925,19 +1785,33 @@ async function applySavedSettings() {
             novaLiveMode = backendSettings.live_mode === true;
             const ollamaLocalBtn = document.getElementById('provider-ollama');
             if (ollamaLocalBtn) {
-                // Show Ollama Local ONLY if backend explicitly says live_mode=false
-                // Default (no backend / fetch fail) = hidden (cloud-safe)
                 ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
             }
-            // If localStorage has ollama (local) provider but we're in live mode, upgrade to hybrid
+            // Fix #4: If localStorage is empty, seed from backend (single source of truth)
+            if (!saved.model && !saved.temperature && !saved.provider) {
+                saved = {
+                    model: backendSettings.model || DEFAULT_SETTINGS.model,
+                    temperature: backendSettings.temperature || DEFAULT_SETTINGS.temperature,
+                    top_p: backendSettings.top_p || DEFAULT_SETTINGS.top_p,
+                    num_predict: backendSettings.num_predict || DEFAULT_SETTINGS.num_predict,
+                    system_prompt: backendSettings.system_prompt || '',
+                    provider: backendSettings.provider || DEFAULT_SETTINGS.provider,
+                    groq_model: backendSettings.groq_model || 'llama-3.3-70b-versatile',
+                    ollama_cloud_url: backendSettings.ollama_cloud_url || 'https://api.ollama.com/api/generate',
+                    hybrid_ollama_model: backendSettings.hybrid_ollama_model || 'mistral',
+                    hybrid_groq_model: backendSettings.hybrid_groq_model || 'llama-3.3-70b-versatile',
+                    stream_mode: true,
+                };
+                localStorage.setItem('nova_settings', JSON.stringify(saved));
+                console.info('[NOVA] Seeded localStorage from backend settings');
+            }
+            // If localStorage has ollama (local) provider but we're in live mode, upgrade
             if (novaLiveMode && saved.provider === 'ollama') {
                 saved.provider = 'hybrid';
                 localStorage.setItem('nova_settings', JSON.stringify(saved));
                 console.info('[NOVA] Live mode: upgraded local ollama provider to hybrid');
             }
         }
-        // If fetch fails (static deploy / no backend), novaLiveMode stays false
-        // but button stays hidden because HTML has display:none by default
     } catch { }
 
     if (!saved.model && !saved.temperature && !saved.provider) return;
@@ -1950,12 +1824,11 @@ async function applySavedSettings() {
             body: JSON.stringify({
                 model: saved.model || DEFAULT_SETTINGS.model,
                 temperature: saved.temperature || DEFAULT_SETTINGS.temperature,
+                top_p: saved.top_p || DEFAULT_SETTINGS.top_p,
                 num_predict: saved.num_predict || DEFAULT_SETTINGS.num_predict,
                 system_prompt: saved.system_prompt || '',
-                provider: saved.provider || 'groq',
-                groq_api_key: saved.groq_api_key || '',
+                provider: saved.provider || DEFAULT_SETTINGS.provider,
                 groq_model: saved.groq_model || 'llama-3.3-70b-versatile',
-                ollama_api_key: saved.ollama_api_key || '',
                 ollama_cloud_url: saved.ollama_cloud_url || 'https://api.ollama.com/api/generate',
                 hybrid_ollama_model: saved.hybrid_ollama_model || 'mistral',
                 hybrid_groq_model: saved.hybrid_groq_model || 'llama-3.3-70b-versatile',

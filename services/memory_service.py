@@ -70,10 +70,36 @@ class MemoryService:
         else:
             self._safe_submit(self._memory.record_conversation)
 
+    # ── Trivial message filter (saves ~300 tokens per skipped extraction) ──
+    _SKIP_WORDS = frozenset({
+        "hi", "hey", "hello", "hola", "yo", "sup",
+        "ok", "okay", "k", "sure", "yes", "no", "yep", "nope", "yea", "yeah",
+        "thanks", "thank you", "thx", "ty",
+        "bye", "goodbye", "good night", "gn", "see you",
+        "hmm", "hm", "ah", "oh", "wow", "lol", "haha", "nice", "cool",
+        "got it", "understood", "alright", "right", "fine",
+        "what", "why", "how", "when", "where", "who",
+    })
+
+    def _should_skip_extraction(self, user_msg: str) -> bool:
+        """Return True if the message is too trivial for LLM extraction."""
+        clean = user_msg.strip().lower().rstrip("?!.,")
+        if len(clean) < 15:  # very short messages rarely contain facts
+            return True
+        if clean in self._SKIP_WORDS:
+            return True
+        # Single-word messages
+        if " " not in clean:
+            return True
+        return False
+
     def extract_and_store(self, user_msg: str, nova_reply: str,
                           model: str, provider_config: dict,
                           user_id: str = None):
         """Extract facts/interests from a turn (background, non-blocking)."""
+        if self._should_skip_extraction(user_msg):
+            log.debug("Skipping extraction — trivial message: '%s'", user_msg[:40])
+            return
         if self._use_db and user_id:
             self._safe_submit(
                 self._db_memory.extract_and_store,

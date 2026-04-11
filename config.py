@@ -4,6 +4,7 @@ All environment variables and settings are managed here.
 """
 
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -151,6 +152,41 @@ PDF_CHUNK_OVERLAP = int(os.getenv("PDF_CHUNK_OVERLAP", "200"))     # overlap bet
 PDF_TOP_K_CHUNKS = int(os.getenv("PDF_TOP_K_CHUNKS", "5"))        # chunks retrieved per query
 ENABLE_DOCUMENT_EMBEDDINGS = os.getenv("ENABLE_DOCUMENT_EMBEDDINGS", "true").lower() in ("true", "1", "yes")
 ENABLE_EXAM_MODE = os.getenv("ENABLE_EXAM_MODE", "true").lower() in ("true", "1", "yes")
+
+
+# ─── Settings Persistence ──────────────────────────────────────────────────────
+_SETTINGS_FILE = os.path.join("/tmp" if IS_VERCEL else BASE_DIR, "nova_settings.json")
+
+# Safe fields to persist (NEVER persist API keys to disk)
+_PERSISTABLE_FIELDS = {
+    "model", "temperature", "top_p", "num_predict", "system_prompt",
+    "provider", "groq_model", "ollama_cloud_url",
+    "hybrid_ollama_model", "hybrid_groq_model",
+}
+
+def _load_persisted_settings():
+    """Load settings from disk on startup (non-sensitive fields only)."""
+    try:
+        if os.path.exists(_SETTINGS_FILE):
+            with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            for key, value in saved.items():
+                if key in _PERSISTABLE_FIELDS and key in NOVA_SETTINGS:
+                    NOVA_SETTINGS[key] = value
+    except Exception:
+        pass  # File corrupt or inaccessible — use env defaults
+
+def save_settings_to_disk():
+    """Persist non-sensitive settings to disk."""
+    try:
+        data = {k: NOVA_SETTINGS[k] for k in _PERSISTABLE_FIELDS if k in NOVA_SETTINGS}
+        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass  # /tmp might be read-only in some envs
+
+# Load persisted settings on import
+_load_persisted_settings()
 
 
 def get_settings():
