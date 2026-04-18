@@ -328,7 +328,7 @@ handler = app
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.getenv("FLASK_PORT", 5000))
+    port = int(os.environ.get("PORT", os.getenv("FLASK_PORT", 5000)))
     host = os.getenv("FLASK_HOST", "0.0.0.0")
     wsgi_threads = max(4, min(32, CPU_CORES_LOGICAL))
 

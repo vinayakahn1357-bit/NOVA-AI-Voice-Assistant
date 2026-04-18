@@ -22,6 +22,7 @@ TASK_QUEUE_WORKERS = int(os.getenv("TASK_QUEUE_WORKERS", "0"))  # 0 = auto-detec
 _live_flag = os.getenv("NOVA_LIVE_MODE", "false").lower() in ("true", "1", "yes")
 _vercel_flag = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
 IS_VERCEL = _vercel_flag
+IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT"))
 
 NOVA_ENV = os.getenv("ENV", "production" if (_live_flag or _vercel_flag) else "local")
 NOVA_LIVE_MODE = (NOVA_ENV == "production")
