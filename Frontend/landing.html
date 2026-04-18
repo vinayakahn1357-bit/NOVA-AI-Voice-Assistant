@@ -4,14 +4,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA AI — Your Neural Voice Assistant</title>
+    <title>NOVA AI — Neural Voice Assistant | Hybrid Cloud Intelligence</title>
     <meta name="description"
-        content="NOVA is an advanced AI voice assistant powered by hybrid cloud intelligence. Have natural conversations, get instant answers, and experience the future of AI.">
+        content="NOVA is a production-grade AI voice assistant with JWT authentication, dual-provider intelligence (Groq + NVIDIA), persistent memory, PDF analysis, and a premium futuristic UI.">
+    <meta name="keywords" content="AI assistant, voice assistant, chatbot, GPT, LLM, Groq, NVIDIA, neural TTS, AI agent">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%23030812'/><polygon points='50,8 88,28 88,72 50,92 12,72 12,28' fill='none' stroke='%2300e5ff' stroke-width='3' opacity='0.85'/><polygon points='50,14 82,31 82,69 50,86 18,69 18,31' fill='%230a1428' opacity='0.9'/><text y='72' x='26' font-size='58' font-family='serif' font-weight='bold' fill='%23e2c077'>N</text></svg>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         *,
@@ -40,7 +43,7 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #030712;
-            background-image: 
+            background-image:
                 radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 229, 255, 0.15) 0%, transparent 100%),
                 radial-gradient(ellipse 80% 50% at 50% 120%, rgba(188, 96, 211, 0.15) 0%, transparent 100%),
                 linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
@@ -66,7 +69,7 @@
         #physics-layer {
             position: fixed;
             inset: 0;
-            z-index: 1; /* Captures mouse safely above the canvas but below content */
+            z-index: 1;
         }
 
         .bg-grid {
@@ -100,7 +103,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 18px 48px;
+            padding: 16px 48px;
             background: rgba(8, 12, 20, 0.6);
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
@@ -128,15 +131,8 @@
         }
 
         @keyframes orbPulse {
-
-            0%,
-            100% {
-                box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
-            }
-
-            50% {
-                box-shadow: 0 0 28px rgba(0, 229, 255, 0.7), 0 0 50px rgba(188, 96, 211, 0.3);
-            }
+            0%, 100% { box-shadow: 0 0 16px rgba(0, 229, 255, 0.4); }
+            50% { box-shadow: 0 0 28px rgba(0, 229, 255, 0.7), 0 0 50px rgba(188, 96, 211, 0.3); }
         }
 
         .nav-links {
@@ -152,9 +148,7 @@
             transition: color 0.2s;
         }
 
-        .nav-links a:hover {
-            color: white;
-        }
+        .nav-links a:hover { color: white; }
 
         .nav-cta {
             display: flex;
@@ -174,11 +168,7 @@
             text-decoration: none;
             transition: all 0.2s;
         }
-
-        .btn-ghost:hover {
-            background: rgba(255, 255, 255, 0.06);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
+        .btn-ghost:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.2); }
 
         .btn-primary {
             padding: 9px 22px;
@@ -193,11 +183,7 @@
             transition: all 0.25s;
             box-shadow: 0 0 20px rgba(0, 229, 255, 0.25);
         }
-
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 0 30px rgba(0, 229, 255, 0.4);
-        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 30px rgba(0, 229, 255, 0.4); }
 
         /* ─── HERO ─── */
         .hero {
@@ -210,6 +196,20 @@
             justify-content: center;
             padding: 120px 24px 80px;
             text-align: center;
+        }
+
+        .hero-logo-img {
+            height: 140px;
+            width: auto;
+            border-radius: 50%;
+            box-shadow: 0 0 30px rgba(0, 229, 255, 0.4), inset 0 0 20px rgba(255,255,255,0.4);
+            margin-bottom: 32px;
+            animation: orbFloat 4s ease-in-out infinite;
+        }
+
+        @keyframes orbFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); box-shadow: 0 12px 40px rgba(0, 229, 255, 0.6), inset 0 0 20px rgba(255,255,255,0.4); }
         }
 
         .hero-badge {
@@ -238,17 +238,7 @@
             animation: blink 1.5s ease-in-out infinite;
         }
 
-        @keyframes blink {
-
-            0%,
-            100% {
-                opacity: 1
-            }
-
-            50% {
-                opacity: 0.3
-            }
-        }
+        @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
 
         .hero-title {
             font-family: 'Space Grotesk', sans-serif;
@@ -267,13 +257,40 @@
         }
 
         .hero-subtitle {
-            max-width: 600px;
-            margin: 24px auto 48px;
+            max-width: 640px;
+            margin: 24px auto 32px;
             font-size: 1.15rem;
             color: var(--muted);
             font-weight: 400;
             animation: fadeUp 0.7s ease 0.2s both;
         }
+
+        /* ─── Version badge row ─── */
+        .hero-version-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+            animation: fadeUp 0.7s ease 0.25s both;
+        }
+
+        .version-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px;
+            border-radius: 100px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .version-chip.cyan { background: rgba(0, 229, 255, 0.08); border: 1px solid rgba(0, 229, 255, 0.2); color: var(--cyan); }
+        .version-chip.purple { background: rgba(188, 96, 211, 0.08); border: 1px solid rgba(188, 96, 211, 0.2); color: var(--purple); }
+        .version-chip.gold { background: rgba(226, 192, 119, 0.08); border: 1px solid rgba(226, 192, 119, 0.2); color: var(--gold); }
+        .version-chip.green { background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.2); color: #00ff88; }
 
         .hero-actions {
             display: flex;
@@ -297,11 +314,7 @@
             box-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
             letter-spacing: 0.01em;
         }
-
-        .btn-hero-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 0 50px rgba(0, 229, 255, 0.5);
-        }
+        .btn-hero-primary:hover { transform: translateY(-2px); box-shadow: 0 0 50px rgba(0, 229, 255, 0.5); }
 
         .btn-hero-ghost {
             padding: 16px 36px;
@@ -316,57 +329,48 @@
             transition: all 0.25s;
             backdrop-filter: blur(10px);
         }
-
-        .btn-hero-ghost:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
-        }
+        .btn-hero-ghost:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
 
         @keyframes fadeUp {
-            from {
-                opacity: 0;
-                transform: translateY(24px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(24px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        /* ─── TRUSTED BY ─── */
-        .trusted {
+        /* ─── STATS BAR ─── */
+        .stats-bar {
             position: relative;
             z-index: 1;
-            padding: 20px 24px;
-            text-align: center;
-        }
-
-        .trusted p {
-            font-size: 0.8rem;
-            color: var(--muted);
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-bottom: 16px;
-        }
-
-        .trusted-logos {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 36px;
+            gap: 48px;
+            padding: 48px 24px;
             flex-wrap: wrap;
         }
 
-        .trusted-logo {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.2);
-            letter-spacing: 0.06em;
+        .stat-item {
+            text-align: center;
         }
 
-        /* ─── FEATURE CARDS ─── */
+        .stat-num {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-label {
+            font-size: 0.78rem;
+            color: var(--muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+
+        /* ─── SECTIONS ─── */
         .section {
             position: relative;
             z-index: 1;
@@ -394,13 +398,14 @@
         }
 
         .section-sub {
-            max-width: 520px;
+            max-width: 560px;
             color: var(--muted);
             font-size: 1rem;
             margin-bottom: 60px;
             line-height: 1.7;
         }
 
+        /* ─── FEATURE CARDS ─── */
         .features-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -417,7 +422,6 @@
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.02);
         }
-
         .feature-card::before {
             content: '';
             position: absolute;
@@ -427,16 +431,12 @@
             opacity: 0;
             transition: opacity 0.3s;
         }
-
         .feature-card:hover {
             transform: translateY(-8px);
             border-color: rgba(0, 229, 255, 0.25);
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(0, 229, 255, 0.05);
         }
-
-        .feature-card:hover::before {
-            opacity: 1;
-        }
+        .feature-card:hover::before { opacity: 1; }
 
         .feature-icon {
             width: 52px;
@@ -450,33 +450,74 @@
             background: rgba(0, 229, 255, 0.08);
             border: 1px solid rgba(0, 229, 255, 0.15);
         }
-
-        .feature-icon.purple {
-            background: rgba(188, 96, 211, 0.08);
-            border-color: rgba(188, 96, 211, 0.15);
-        }
-
-        .feature-icon.gold {
-            background: rgba(226, 192, 119, 0.08);
-            border-color: rgba(226, 192, 119, 0.15);
-        }
-
-        .feature-icon.green {
-            background: rgba(0, 255, 136, 0.08);
-            border-color: rgba(0, 255, 136, 0.15);
-        }
+        .feature-icon.purple { background: rgba(188, 96, 211, 0.08); border-color: rgba(188, 96, 211, 0.15); }
+        .feature-icon.gold { background: rgba(226, 192, 119, 0.08); border-color: rgba(226, 192, 119, 0.15); }
+        .feature-icon.green { background: rgba(0, 255, 136, 0.08); border-color: rgba(0, 255, 136, 0.15); }
+        .feature-icon.red { background: rgba(255, 80, 80, 0.08); border-color: rgba(255, 80, 80, 0.15); }
 
         .feature-title {
             font-family: 'Space Grotesk', sans-serif;
             font-size: 1.1rem;
             font-weight: 600;
             margin-bottom: 10px;
+            position: relative;
         }
 
         .feature-desc {
             color: var(--muted);
             font-size: 0.9rem;
             line-height: 1.7;
+            position: relative;
+        }
+
+        .feature-tag {
+            display: inline-block;
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 6px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .feature-tag.new { background: rgba(0, 255, 136, 0.12); color: #00ff88; }
+        .feature-tag.upgraded { background: rgba(0, 229, 255, 0.12); color: var(--cyan); }
+
+        /* ─── ARCHITECTURE SECTION ─── */
+        .arch-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .arch-card {
+            text-align: center;
+            padding: 28px 20px;
+            border-radius: 16px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        .arch-card:hover {
+            border-color: rgba(0, 229, 255, 0.25);
+            transform: translateY(-4px);
+        }
+
+        .arch-num {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--cyan);
+            line-height: 1;
+        }
+
+        .arch-label {
+            font-size: 0.78rem;
+            color: var(--muted);
+            margin-top: 6px;
+            letter-spacing: 0.04em;
         }
 
         /* ─── HOW IT WORKS ─── */
@@ -486,7 +527,6 @@
             gap: 0;
             position: relative;
         }
-
         .how-grid::before {
             content: '';
             position: absolute;
@@ -498,10 +538,7 @@
             opacity: 0.3;
         }
 
-        .how-step {
-            text-align: center;
-            padding: 0 24px;
-        }
+        .how-step { text-align: center; padding: 0 24px; }
 
         .how-num {
             width: 56px;
@@ -519,16 +556,8 @@
             color: var(--cyan);
         }
 
-        .how-title {
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .how-desc {
-            color: var(--muted);
-            font-size: 0.88rem;
-            line-height: 1.6;
-        }
+        .how-title { font-weight: 600; margin-bottom: 8px; }
+        .how-desc { color: var(--muted); font-size: 0.88rem; line-height: 1.6; }
 
         /* ─── PROVIDERS ─── */
         .providers-row {
@@ -557,25 +586,11 @@
             border-radius: 50%;
         }
 
-        .dot-cyan {
-            background: var(--cyan);
-            box-shadow: 0 0 8px var(--cyan);
-        }
-
-        .dot-purple {
-            background: var(--purple);
-            box-shadow: 0 0 8px var(--purple);
-        }
-
-        .dot-gold {
-            background: var(--gold);
-            box-shadow: 0 0 8px var(--gold);
-        }
-
-        .dot-green {
-            background: #00ff88;
-            box-shadow: 0 0 8px #00ff88;
-        }
+        .dot-cyan { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+        .dot-purple { background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+        .dot-gold { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+        .dot-green { background: #00ff88; box-shadow: 0 0 8px #00ff88; }
+        .dot-red { background: #ff4444; box-shadow: 0 0 8px #ff4444; }
 
         /* ─── CTA BANNER ─── */
         .cta-banner {
@@ -592,7 +607,6 @@
             text-align: center;
             overflow: hidden;
         }
-
         .cta-banner::before {
             content: '';
             position: absolute;
@@ -602,7 +616,6 @@
             height: 200%;
             background: radial-gradient(ellipse, rgba(0, 229, 255, 0.06) 0%, transparent 70%);
         }
-
         .cta-banner::after {
             content: '';
             position: absolute;
@@ -621,16 +634,7 @@
             position: relative;
             z-index: 1;
         }
-
-        .cta-banner p {
-            color: var(--muted);
-            max-width: 480px;
-            margin: 0 auto 36px;
-            font-size: 1rem;
-            line-height: 1.7;
-            position: relative;
-            z-index: 1;
-        }
+        .cta-banner p { color: var(--muted); max-width: 480px; margin: 0 auto 36px; font-size: 1rem; line-height: 1.7; position: relative; z-index: 1; }
 
         .cta-banner-actions {
             display: flex;
@@ -652,27 +656,10 @@
             transition: all 0.25s;
             letter-spacing: 0.01em;
         }
-
-        .btn-large.primary {
-            background: linear-gradient(135deg, var(--cyan), #0099cc);
-            color: #080c14;
-            box-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
-        }
-
-        .btn-large.primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 0 50px rgba(0, 229, 255, 0.5);
-        }
-
-        .btn-large.secondary {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1.5px solid rgba(255, 255, 255, 0.15);
-            color: white;
-        }
-
-        .btn-large.secondary:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
+        .btn-large.primary { background: linear-gradient(135deg, var(--cyan), #0099cc); color: #080c14; box-shadow: 0 0 30px rgba(0, 229, 255, 0.3); }
+        .btn-large.primary:hover { transform: translateY(-2px); box-shadow: 0 0 50px rgba(0, 229, 255, 0.5); }
+        .btn-large.secondary { background: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.15); color: white; }
+        .btn-large.secondary:hover { background: rgba(255, 255, 255, 0.1); }
 
         /* ─── FOOTER ─── */
         footer {
@@ -686,72 +673,36 @@
             flex-wrap: wrap;
             gap: 16px;
         }
+        footer .logo { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.1rem; }
+        footer p { color: var(--muted); font-size: 0.82rem; }
 
-        footer .logo {
-            font-family: 'Space Grotesk', sans-serif;
-            font-weight: 700;
-            font-size: 1.1rem;
+        .footer-links {
+            display: flex;
+            gap: 24px;
         }
 
-        footer p {
+        .footer-links a {
             color: var(--muted);
+            text-decoration: none;
             font-size: 0.82rem;
+            transition: color 0.2s;
         }
+        .footer-links a:hover { color: var(--cyan); }
 
-        /* ─── Scroll-reveal (simple) ─── */
-        .reveal {
-            opacity: 0;
-            transform: translateY(30px);
-            transition: all 0.6s ease;
-        }
-
-        .reveal.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        /* ─── Scroll-reveal ─── */
+        .reveal { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
+        .reveal.visible { opacity: 1; transform: translateY(0); }
 
         /* ─── Mobile ─── */
         @media(max-width:768px) {
-            nav {
-                padding: 14px 20px;
-            }
-
-            .nav-links {
-                display: none;
-            }
-
-            .hero {
-                padding: 100px 20px 60px;
-            }
-
-            .hero-visual {
-                width: 240px;
-                height: 240px;
-            }
-
-            .cta-banner {
-                padding: 48px 24px;
-                margin: 0 12px 60px;
-            }
-
-            footer {
-                flex-direction: column;
-                padding: 30px 20px;
-            }
-        }
-
-        /* Float Logo Animation */
-        .hero-logo-img {
-            height: 140px;
-            width: auto;
-            border-radius: 50%;
-            box-shadow: 0 0 30px rgba(0, 229, 255, 0.4), inset 0 0 20px rgba(255,255,255,0.4);
-            margin-bottom: 32px;
-            animation: orbFloat 4s ease-in-out infinite;
-        }
-        @keyframes orbFloat {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-12px); box-shadow: 0 12px 40px rgba(0, 229, 255, 0.6), inset 0 0 20px rgba(255,255,255,0.4); }
+            nav { padding: 14px 20px; }
+            .nav-links { display: none; }
+            .hero { padding: 100px 20px 60px; }
+            .hero-logo-img { height: 100px; }
+            .stats-bar { gap: 24px; }
+            .stat-num { font-size: 1.8rem; }
+            .cta-banner { padding: 48px 24px; margin: 0 12px 60px; }
+            footer { flex-direction: column; padding: 30px 20px; }
         }
     </style>
 </head>
@@ -772,6 +723,7 @@
         </a>
         <div class="nav-links">
             <a href="#features">Features</a>
+            <a href="#architecture">Architecture</a>
             <a href="#how-it-works">How it works</a>
             <a href="#providers">Providers</a>
         </div>
@@ -781,22 +733,53 @@
         </div>
     </nav>
 
+    <!-- HERO -->
     <section class="hero">
         <img src="/static/nova_logo.png" alt="NOVA Logo" class="hero-logo-img">
-        <div class="hero-badge">✦ Powered by Hybrid AI Intelligence</div>
+        <div class="hero-badge">✦ Production-Grade AI Assistant</div>
         <h1 class="hero-title">
             Meet <span class="gradient-text">NOVA</span><br>
             Your AI Voice Assistant
         </h1>
         <p class="hero-subtitle">
-            An advanced neural voice assistant that thinks, speaks, and remembers.
-            Powered by a hybrid cloud AI that routes every query to the smartest model available.
+            A production-ready neural voice assistant with dual-provider intelligence, persistent memory,
+            document analysis, and JWT-secured APIs. Thinks, speaks, and remembers.
         </p>
+        <div class="hero-version-row">
+            <span class="version-chip cyan">🔐 JWT Auth</span>
+            <span class="version-chip purple">⚡ Redis Cache</span>
+            <span class="version-chip gold">📄 PDF Intelligence</span>
+            <span class="version-chip green">🧠 29 Services</span>
+        </div>
         <div class="hero-actions">
             <a href="/login" class="btn-hero-primary">🚀 Get Started Free</a>
             <a href="#features" class="btn-hero-ghost">✦ Explore Features</a>
         </div>
     </section>
+
+    <!-- STATS BAR -->
+    <div class="stats-bar reveal">
+        <div class="stat-item">
+            <div class="stat-num">29</div>
+            <div class="stat-label">Backend Services</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">6</div>
+            <div class="stat-label">Pipeline Stages</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">5</div>
+            <div class="stat-label">Voice Personas</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">13</div>
+            <div class="stat-label">Query Types</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-num">2</div>
+            <div class="stat-label">AI Providers</div>
+        </div>
+    </div>
 
     <!-- FEATURES -->
     <div class="section" id="features">
@@ -805,7 +788,7 @@
             <h2 class="section-title">Built for real conversations</h2>
             <p class="section-sub">
                 NOVA isn't just a chatbot — it's a thinking, speaking, remembering assistant
-                that adapts to how you communicate.
+                with production-grade security and enterprise-ready infrastructure.
             </p>
         </div>
         <div class="features-grid">
@@ -813,37 +796,90 @@
                 <div class="feature-icon">🎙️</div>
                 <div class="feature-title">Natural Voice Conversations</div>
                 <div class="feature-desc">Speak naturally and NOVA listens. Powered by real-time speech recognition with
-                    smart silence detection — no wake words, no buttons.</div>
+                    smart silence detection. Dedicated Jarvis-style voice interface with animated AI core.</div>
             </div>
             <div class="feature-card reveal">
                 <div class="feature-icon purple">🔀</div>
-                <div class="feature-title">Hybrid AI Intelligence</div>
-                <div class="feature-desc">Simple questions go to fast, lightweight models. Complex reasoning routes to
-                    powerful 70B models. Always the right tool for the job.</div>
+                <div class="feature-title">Dual-Provider Intelligence</div>
+                <div class="feature-desc">Groq for ultra-fast inference, NVIDIA for advanced reasoning. NOVA's smart router
+                    automatically picks the best provider — or runs both in hybrid parallel mode.</div>
             </div>
             <div class="feature-card reveal">
                 <div class="feature-icon gold">🧠</div>
                 <div class="feature-title">Persistent Memory</div>
                 <div class="feature-desc">NOVA learns from every conversation — your interests, preferences, and facts.
-                    She remembers who you are across sessions.</div>
+                    SQLite WAL-mode backed. She remembers who you are across sessions.</div>
             </div>
             <div class="feature-card reveal">
-                <div class="feature-icon green">⚡</div>
-                <div class="feature-title">Streaming Responses</div>
-                <div class="feature-desc">Answers appear word-by-word as they're generated, with gapless sentence-level
-                    TTS so you hear Nova speak before she's even done thinking.</div>
+                <div class="feature-icon green">📄</div>
+                <div class="feature-title">PDF Intelligence <span class="feature-tag new">NEW</span></div>
+                <div class="feature-desc">Upload PDFs up to 50MB. TF-IDF semantic retrieval finds relevant chunks.
+                    Get structured answers with page-level citations from your documents.</div>
             </div>
             <div class="feature-card reveal">
-                <div class="feature-icon">🌐</div>
-                <div class="feature-title">Cloud-Powered, Always On</div>
-                <div class="feature-desc">No GPU required. NOVA runs entirely on cloud AI providers — Groq, NVIDIA
-                    Cloud, or both in hybrid mode — accessible from any browser.</div>
+                <div class="feature-icon red">🔐</div>
+                <div class="feature-title">JWT + Session Auth <span class="feature-tag new">NEW</span></div>
+                <div class="feature-desc">Stateless JWT tokens for API clients, session cookies for browsers.
+                    Token refresh, Google OAuth bridge, Redis rate limiting — production-grade security.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">Redis Infrastructure <span class="feature-tag new">NEW</span></div>
+                <div class="feature-desc">Distributed response caching, sliding-window rate limiting, and session storage.
+                    Graceful in-memory fallback when Redis is unavailable.</div>
             </div>
             <div class="feature-card reveal">
                 <div class="feature-icon purple">🎨</div>
-                <div class="feature-title">Voice Personalities</div>
-                <div class="feature-desc">Choose NOVA's voice personality — the precise, clear NOVA voice, the playful
-                    Anya, or the warm Mitsuri. Neural TTS for premium quality.</div>
+                <div class="feature-title">5 Voice Personalities</div>
+                <div class="feature-desc">Choose NOVA's voice — the precise NOVA, playful Anya, warm Mitsuri,
+                    authoritative Jarvis, or calm Sage. Microsoft Edge Neural TTS quality.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon gold">🔄</div>
+                <div class="feature-title">Streaming + Markdown <span class="feature-tag upgraded">UPGRADED</span></div>
+                <div class="feature-desc">Token-by-token SSE streaming with full markdown rendering. Bold, lists, code blocks
+                    with syntax highlighting — in both chat and voice views.</div>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon green">🤖</div>
+                <div class="feature-title">Agent Intelligence</div>
+                <div class="feature-desc">Agent Runner with 5 modes: Normal, Decision, Opinion, Planning, Tool.
+                    Workflow Engine for multi-step task orchestration. Built-in calculator, system tools.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ARCHITECTURE -->
+    <div class="section" id="architecture" style="padding-top:0;">
+        <div class="reveal">
+            <span class="section-label">✦ Under the hood</span>
+            <h2 class="section-title">Enterprise-grade architecture</h2>
+            <p class="section-sub">29 modular services, 6-stage response pipeline, and a resilient infrastructure designed for scale.</p>
+        </div>
+        <div class="arch-grid reveal">
+            <div class="arch-card">
+                <div class="arch-num">29</div>
+                <div class="arch-label">Backend Services</div>
+            </div>
+            <div class="arch-card">
+                <div class="arch-num">6</div>
+                <div class="arch-label">Pipeline Stages</div>
+            </div>
+            <div class="arch-card">
+                <div class="arch-num">8900+</div>
+                <div class="arch-label">Lines of CSS</div>
+            </div>
+            <div class="arch-card">
+                <div class="arch-num">3180+</div>
+                <div class="arch-label">Lines of JS</div>
+            </div>
+            <div class="arch-card">
+                <div class="arch-num">JWT</div>
+                <div class="arch-label">Stateless Auth</div>
+            </div>
+            <div class="arch-card">
+                <div class="arch-num">Redis</div>
+                <div class="arch-label">Cache + Rate Limit</div>
             </div>
         </div>
     </div>
@@ -859,24 +895,22 @@
             <div class="how-step">
                 <div class="how-num">01</div>
                 <div class="how-title">Sign In</div>
-                <div class="how-desc">Create a free account with your Google account in one click.</div>
+                <div class="how-desc">Create a free account with Google OAuth in one click — or register with email/password.</div>
             </div>
             <div class="how-step">
                 <div class="how-num">02</div>
-                <div class="how-title">Configure</div>
-                <div class="how-desc">Add your Groq or NVIDIA API key — NOVA's smart router picks the best provider automatically.
-                </div>
+                <div class="how-title">Get Your Token</div>
+                <div class="how-desc">NOVA issues a JWT token on login. Use it in the browser or via API with Bearer auth headers.</div>
             </div>
             <div class="how-step">
                 <div class="how-num">03</div>
                 <div class="how-title">Talk to NOVA</div>
-                <div class="how-desc">Tap the mic, speak naturally. NOVA listens, thinks, and speaks back.</div>
+                <div class="how-desc">Tap the mic, speak naturally. Or type in chat. Upload PDFs for document-aware conversations.</div>
             </div>
             <div class="how-step">
                 <div class="how-num">04</div>
                 <div class="how-title">NOVA Remembers</div>
-                <div class="how-desc">She learns from every session — getting smarter and more personalized over time.
-                </div>
+                <div class="how-desc">She learns from every session — getting smarter and more personalized over time with persistent memory.</div>
             </div>
         </div>
     </div>
@@ -892,16 +926,17 @@
             </p>
         </div>
         <div class="providers-row reveal">
-            <div class="provider-chip"><span class="dot dot-cyan"></span> Groq Cloud — Ultra-fast inference</div>
-            <div class="provider-chip"><span class="dot dot-purple"></span> NVIDIA API — Advanced reasoning</div>
+            <div class="provider-chip"><span class="dot dot-cyan"></span> Groq Cloud — Ultra-fast LLaMA 3.3 70B</div>
+            <div class="provider-chip"><span class="dot dot-purple"></span> NVIDIA API — Advanced reasoning models</div>
             <div class="provider-chip"><span class="dot dot-gold"></span> Smart Routing — Auto-selects best provider</div>
+            <div class="provider-chip"><span class="dot dot-green"></span> Redis — Distributed cache & rate limiting</div>
         </div>
     </div>
 
     <!-- CTA BANNER -->
     <div class="cta-banner reveal">
         <h2>Ready to meet <span class="gradient-text">NOVA</span>?</h2>
-        <p>Your AI companion is waiting. Start a conversation in seconds — it's completely free to try.</p>
+        <p>Your AI companion is waiting. JWT-secured, Redis-powered, and production-ready. Start a conversation in seconds.</p>
         <div class="cta-banner-actions">
             <a href="/login" class="btn-large primary">🚀 Sign Up Free</a>
             <a href="/login" class="btn-large secondary">Sign In →</a>
@@ -911,8 +946,13 @@
     <!-- FOOTER -->
     <footer>
         <div class="logo">✦ NOVA AI</div>
+        <div class="footer-links">
+            <a href="#features">Features</a>
+            <a href="#architecture">Architecture</a>
+            <a href="#providers">Providers</a>
+        </div>
         <p>© 2026 NOVA AI. Built with ❤️ and hybrid intelligence.</p>
-        <p style="color:rgba(255,255,255,0.2)">v2.0 · Hybrid Mode</p>
+        <p style="color:rgba(255,255,255,0.2)">v3.0 · JWT Auth · Redis · Dual Provider</p>
     </footer>
 
     <script>
@@ -928,7 +968,7 @@
         }, { threshold: 0.12 });
         revealEls.forEach(el => observer.observe(el));
 
-        // ── 3D Masterpiece Neural Network ─────────────────────────────────────
+        // ── 3D Neural Network ─────────────────────────────────────────────────
         let homeScene, homeCamera, homeRenderer, neuralPoints, neuralLines;
         let mouseX = 0, mouseY = 0;
         let homeAnimId;
@@ -936,7 +976,7 @@
         const windowHalfY = window.innerHeight / 2;
         let time = 0;
         
-        const particleCount = 200; // Optimal for lines
+        const particleCount = 200;
         const maxDistance = 150;
         let particlePositions = [];
         let particleVelocities = [];
@@ -947,7 +987,6 @@
             if (typeof THREE === 'undefined') return;
 
             homeScene = new THREE.Scene();
-            
             homeCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 2000);
             homeCamera.position.z = 400;
 
@@ -955,7 +994,6 @@
             homeRenderer.setPixelRatio(window.devicePixelRatio);
             homeRenderer.setSize(window.innerWidth, window.innerHeight);
 
-            // Particles
             const pGeometry = new THREE.BufferGeometry();
             const pPositions = new Float32Array(particleCount * 3);
             const pColors = new Float32Array(particleCount * 3);
@@ -991,7 +1029,6 @@
             neuralPoints = new THREE.Points(pGeometry, pMaterial);
             homeScene.add(neuralPoints);
 
-            // Lines
             const lGeometry = new THREE.BufferGeometry();
             const maxLines = particleCount * particleCount;
             const lPositions = new Float32Array(maxLines * 3);
@@ -1030,12 +1067,10 @@
             homeAnimId = requestAnimationFrame(animateHomeParticles);
             time += 0.01;
             
-            // Parallax
             homeCamera.position.x += (mouseX * 0.15 - homeCamera.position.x) * 0.05;
             homeCamera.position.y += (-mouseY * 0.15 - homeCamera.position.y) * 0.05;
             homeCamera.lookAt(0, 0, 0);
 
-            // Move Particles
             const positions = neuralPoints.geometry.attributes.position.array;
             const colors = neuralPoints.geometry.attributes.color.array;
 
@@ -1054,7 +1089,6 @@
             }
             neuralPoints.geometry.attributes.position.needsUpdate = true;
 
-            // Connect Lines
             let vertexpos = 0;
             let colorpos = 0;
             let numLines = 0;
@@ -1097,7 +1131,6 @@
             neuralLines.geometry.attributes.position.needsUpdate = true;
             neuralLines.geometry.attributes.color.needsUpdate = true;
 
-            // Ambient gentle rotation for the whole network
             homeScene.rotation.y = time * 0.1;
             homeScene.rotation.x = time * 0.05;
 
