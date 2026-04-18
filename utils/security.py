@@ -151,7 +151,7 @@ def login_required(f):
     """
     Decorator: verifies authentication via JWT or session.
     Priority: JWT → Session → 401/redirect.
-    Sets g.user_id, g.user_email, g.user_role for downstream use.
+    Sets g.user_id, g.user_email, g.user_role, g.auth_method for downstream use.
     """
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -160,6 +160,7 @@ def login_required(f):
             g.user_id = user["user_id"]
             g.user_email = user["email"]
             g.user_role = user["role"]
+            g.auth_method = user.get("auth_method", "session")
             return f(*args, **kwargs)
 
         # Not authenticated

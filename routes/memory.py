@@ -2,7 +2,7 @@
 routes/memory.py — Memory Routes Blueprint for NOVA
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 
 from config import get_settings, build_provider_config
 from utils.logger import get_logger
@@ -41,7 +41,8 @@ def generate_summary():
     """Trigger a daily summary for a specific session."""
     data = request.get_json() or {}
     session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
-    history = _session_service.get_history(session_id)
+    user_id = session.get("user_id", "default")
+    history = _session_service.get_history(session_id, user_id=user_id)
     if history:
         settings = get_settings()
         active_model = (

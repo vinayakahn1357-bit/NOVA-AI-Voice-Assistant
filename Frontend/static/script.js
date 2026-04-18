@@ -3025,10 +3025,13 @@ sendVoiceMessage = async function (message) {
     userBubble.textContent = message;
     pair.appendChild(userBubble);
 
-    // Add processing indicator for Nova
+    // Add processing indicator for Nova — wrap content in inner div for markdown
     const novaBubble = document.createElement('div');
     novaBubble.className = 'vv-chat-nova processing';
-    novaBubble.textContent = 'Thinking\u2026';
+    const novaContent = document.createElement('div');
+    novaContent.className = 'vv-nova-content';
+    novaContent.textContent = 'Thinking\u2026';
+    novaBubble.appendChild(novaContent);
     pair.appendChild(novaBubble);
 
     if (chatLog) {
@@ -3043,10 +3046,11 @@ sendVoiceMessage = async function (message) {
     try {
         const replyText = await sendVoiceStream(message, {
             onToken(fullSoFar, _token) {
-                // Show streaming text in Nova bubble (live update)
+                // Show streaming text — plain text during streaming for performance
                 novaBubble.className = 'vv-chat-nova';
-                const display = fullSoFar.length > 400 ? '\u2026' + fullSoFar.slice(-400) : fullSoFar;
-                novaBubble.textContent = display;
+                novaContent.textContent = fullSoFar;
+                // Auto-scroll both: bubble itself and the chat log
+                novaBubble.scrollTop = novaBubble.scrollHeight;
                 if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
             },
             onSentence(_sentence) {
@@ -3054,14 +3058,23 @@ sendVoiceMessage = async function (message) {
                 if (!isSpeaking) setVoiceViewState('speaking');
             },
             onDone(fullReply) {
-                // Final display — show full reply (trimmed for readability)
-                const displayReply = fullReply.length > 400 ? fullReply.slice(0, 400) + '\u2026' : fullReply;
-                novaBubble.textContent = displayReply;
+                // Final display — render with full markdown for user-friendly output
+                novaBubble.className = 'vv-chat-nova';
+                if (typeof renderMarkdown === 'function') {
+                    novaContent.innerHTML = renderMarkdown(fullReply);
+                    // Syntax highlight code blocks
+                    novaContent.querySelectorAll('pre code').forEach(block => {
+                        if (typeof hljs !== 'undefined') hljs.highlightElement(block);
+                    });
+                } else {
+                    novaContent.textContent = fullReply;
+                }
+                novaBubble.scrollTop = novaBubble.scrollHeight;
                 if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
             },
             onError(err) {
                 novaBubble.className = 'vv-chat-nova';
-                novaBubble.textContent = 'Could not reach NOVA \u2014 is the server running?';
+                novaContent.textContent = 'Could not reach NOVA \u2014 is the server running?';
                 setVoiceViewState('idle');
                 showToast('Could not reach NOVA \u2014 is the server running?', 'error');
             },
@@ -3076,7 +3089,7 @@ sendVoiceMessage = async function (message) {
 
     } catch (err) {
         novaBubble.className = 'vv-chat-nova';
-        novaBubble.textContent = 'Could not reach NOVA \u2014 is the server running?';
+        novaContent.textContent = 'Could not reach NOVA \u2014 is the server running?';
         setVoiceViewState('idle');
         showToast('Could not reach NOVA \u2014 is the server running?', 'error');
     }

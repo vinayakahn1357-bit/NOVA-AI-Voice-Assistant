@@ -57,6 +57,46 @@ def google_callback():
     return handle_google_callback()
 
 
+# ─── JWT Token Endpoints ──────────────────────────────────────────────────────
+
+@auth_bp.route("/auth/refresh", methods=["POST"])
+def refresh_token():
+    """
+    Refresh a JWT token — exchange a valid token for a new one.
+    Requires a valid JWT in the Authorization header.
+    """
+    from utils.jwt_auth import extract_user_from_token, generate_token
+    user = extract_user_from_token()
+    if not user:
+        return jsonify({"error": "Valid JWT token required for refresh"}), 401
+
+    token = generate_token(user["user_id"], user["email"], user.get("role", "user"))
+    if not token:
+        return jsonify({"error": "Token generation failed"}), 500
+
+    return jsonify({"ok": True, "token": token})
+
+
+@auth_bp.route("/auth/token", methods=["GET"])
+@login_required
+def get_token():
+    """
+    Get a JWT token for the current session user.
+    Used by browser-based apps after session login / Google OAuth.
+    """
+    from utils.jwt_auth import generate_token, is_jwt_enabled
+    from flask import g
+
+    if not is_jwt_enabled():
+        return jsonify({"ok": False, "error": "JWT not configured"}), 503
+
+    token = generate_token(g.user_id, g.user_email, g.user_role)
+    if not token:
+        return jsonify({"ok": False, "error": "Token generation failed"}), 500
+
+    return jsonify({"ok": True, "token": token})
+
+
 # ─── Page Serving ─────────────────────────────────────────────────────────────
 
 @auth_bp.route("/")

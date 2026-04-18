@@ -67,11 +67,12 @@ CREATE TABLE IF NOT EXISTS meta (
 
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT NOT NULL,
+    user_id    TEXT NOT NULL DEFAULT 'default',
     turn       INTEGER NOT NULL,
     role       TEXT NOT NULL,
     content    TEXT NOT NULL,
     ts         TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (session_id, turn)
+    PRIMARY KEY (session_id, user_id, turn)
 );
 """
 

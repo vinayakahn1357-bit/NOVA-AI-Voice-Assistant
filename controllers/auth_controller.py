@@ -1,6 +1,7 @@
 """
 controllers/auth_controller.py — Authentication Logic for NOVA
 Handles register, login, logout, OAuth, and user management.
+Phase 6+: Returns JWT tokens on login/register for stateless auth.
 """
 
 import json
@@ -17,7 +18,8 @@ from config import (
 from utils.logger import get_logger
 from utils.errors import NovaValidationError, NovaAuthError
 from utils.validators import validate_email, validate_password, validate_name
-from utils.security import hash_password, verify_password
+from utils.security import hash_password, verify_password, is_admin, get_user_role
+from utils.jwt_auth import generate_token, is_jwt_enabled
 
 log = get_logger("auth")
 
@@ -54,7 +56,7 @@ def _save_users(users: dict):
 def handle_register(data: dict) -> dict:
     """
     Register a new user.
-    Returns: {"ok": True, "user": {...}}
+    Returns: {"ok": True, "user": {...}, "token": str|None}
     Raises: NovaValidationError, NovaAuthError
     """
     name = validate_name(data.get("name", ""))
@@ -66,8 +68,10 @@ def handle_register(data: dict) -> dict:
         raise NovaAuthError("An account with this email already exists.", status_code=409)
 
     hashed, salt = hash_password(password)
+    user_id = str(uuid.uuid4())
+    role = "admin" if is_admin(email) else "user"
     users[email] = {
-        "id":       str(uuid.uuid4()),
+        "id":       user_id,
         "name":     name,
         "email":    email,
         "hash":     hashed,
@@ -77,19 +81,26 @@ def handle_register(data: dict) -> dict:
     }
     _save_users(users)
 
+    # Session (backward compat for browser-based auth)
     session.permanent = True
-    session["user_id"] = users[email]["id"]
+    session["user_id"] = user_id
     session["user_email"] = email
     session["user_name"] = name
 
-    log.info("New user registered: %s", email)
-    return {"ok": True, "user": {"name": name, "email": email}}
+    # JWT token (stateless auth for API clients)
+    token = generate_token(user_id, email, role)
+
+    log.info("New user registered: %s (jwt=%s)", email, "yes" if token else "no")
+    result = {"ok": True, "user": {"name": name, "email": email}}
+    if token:
+        result["token"] = token
+    return result
 
 
 def handle_login(data: dict) -> dict:
     """
     Log in a user.
-    Returns: {"ok": True, "user": {...}}
+    Returns: {"ok": True, "user": {...}, "token": str|None}
     Raises: NovaAuthError
     """
     email = validate_email(data.get("email", ""))
@@ -110,13 +121,21 @@ def handle_login(data: dict) -> dict:
     if not verify_password(password, user["hash"], user["salt"]):
         raise NovaAuthError("Incorrect email or password.")
 
+    # Session (backward compat for browser-based auth)
     session.permanent = True
     session["user_id"] = user["id"]
     session["user_email"] = email
     session["user_name"] = user["name"]
 
-    log.info("User logged in: %s", email)
-    return {"ok": True, "user": {"name": user["name"], "email": email}}
+    # JWT token (stateless auth for API clients)
+    role = "admin" if is_admin(email) else "user"
+    token = generate_token(user["id"], email, role)
+
+    log.info("User logged in: %s (jwt=%s)", email, "yes" if token else "no")
+    result = {"ok": True, "user": {"name": user["name"], "email": email}}
+    if token:
+        result["token"] = token
+    return result
 
 
 def handle_logout():
@@ -126,19 +145,27 @@ def handle_logout():
 
 
 def handle_me() -> dict:
-    """Return the current authenticated user, or None."""
-    if not session.get("user_id"):
+    """
+    Return the current authenticated user, or None.
+    Supports both JWT and session authentication.
+    """
+    from utils.security import get_current_user
+
+    user = get_current_user()
+    if not user:
         return None
 
-    from utils.security import is_admin, get_user_role
-    email = session.get("user_email", "")
+    email = user.get("email", "")
+    user_id = user.get("user_id", "")
+    name = session.get("user_name", email.split("@")[0] if email else "")
 
     return {
-        "id":       session.get("user_id"),
-        "name":     session.get("user_name"),
-        "email":    email,
-        "is_admin": is_admin(email),
-        "role":     get_user_role(),
+        "id":          user_id,
+        "name":        name,
+        "email":       email,
+        "is_admin":    is_admin(email),
+        "role":        user.get("role", "user"),
+        "auth_method": user.get("auth_method", "session"),
     }
 
 
@@ -278,9 +305,17 @@ def handle_google_callback():
             users[email]["name"] = name
             _save_users(users)
 
+    # Session (for browser redirect flow)
     session.permanent = True
     session["user_id"] = users[email]["id"]
     session["user_email"] = email
     session["user_name"] = users[email]["name"]
-    log.info("Google login success: %s", email)
+
+    # Generate JWT for potential API use (stored in cookie for SPA pickup)
+    role = "admin" if is_admin(email) else "user"
+    token = generate_token(users[email]["id"], email, role)
+    if token:
+        session["jwt_token"] = token
+
+    log.info("Google login success: %s (jwt=%s)", email, "yes" if token else "no")
     return redirect("/app")

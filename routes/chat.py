@@ -9,7 +9,7 @@ Phase 11: Multi-document management, dedicated upload, exam mode, processing sta
 from flask import Blueprint, request, jsonify
 
 from utils.logger import get_logger
-from utils.security import chat_rate_limiter
+from utils.security import chat_rate_limiter, login_required
 from utils.errors import NovaValidationError, NovaRateLimitError, NovaProviderError
 
 log = get_logger("routes.chat")
@@ -163,6 +163,7 @@ def _process_pdf_context(data: dict, file_bytes: bytes, filename: str,
 # ── Chat Endpoint ─────────────────────────────────────────────────────────────
 
 @chat_bp.route("/chat", methods=["POST"])
+@login_required
 def chat():
     try:
         data, file_bytes, filename = _parse_request_data()
@@ -200,6 +201,7 @@ def chat():
 
 
 @chat_bp.route("/chat/stream", methods=["POST"])
+@login_required
 def chat_stream():
     try:
         data, file_bytes, filename = _parse_request_data()
@@ -229,6 +231,7 @@ def chat_stream():
 
 
 @chat_bp.route("/reset", methods=["POST"])
+@login_required
 def reset_conversation():
     data = request.get_json() or {}
     session_id = data.get("session_id") or request.headers.get("X-Session-Id")
@@ -239,6 +242,7 @@ def reset_conversation():
 # ── Phase 11: Dedicated Document Upload ───────────────────────────────────────
 
 @chat_bp.route("/document/upload", methods=["POST"])
+@login_required
 def document_upload():
     """
     Dedicated PDF upload endpoint (separate from chat).
@@ -296,6 +300,7 @@ def document_list():
 
 
 @chat_bp.route("/document/switch", methods=["POST"])
+@login_required
 def document_switch():
     """Switch the active document by doc_id or filename."""
     data = request.get_json() or {}
@@ -322,6 +327,7 @@ def document_switch():
 
 
 @chat_bp.route("/document/remove", methods=["POST"])
+@login_required
 def document_remove():
     """Remove a specific document by doc_id or filename."""
     data = request.get_json() or {}
@@ -344,6 +350,7 @@ def document_remove():
 
 
 @chat_bp.route("/document/clear", methods=["POST"])
+@login_required
 def document_clear():
     """Clear all document contexts for the current session."""
     data = request.get_json() or {}
@@ -379,6 +386,7 @@ def get_exam_mode():
 
 
 @chat_bp.route("/settings/exam-mode", methods=["POST"])
+@login_required
 def set_exam_mode():
     """Manually toggle exam mode."""
     data = request.get_json() or {}
@@ -396,6 +404,7 @@ def set_exam_mode():
 # ── Cache Endpoints ───────────────────────────────────────────────────────────
 
 @chat_bp.route("/chat/cache/clear", methods=["POST"])
+@login_required
 def clear_cache():
     """Clear the response cache."""
     if _cache_service:
@@ -429,6 +438,7 @@ def get_personality():
 
 
 @chat_bp.route("/settings/personality", methods=["POST"])
+@login_required
 def set_personality():
     """Set the personality for the current session."""
     data = request.get_json() or {}

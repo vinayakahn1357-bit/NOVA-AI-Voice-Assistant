@@ -91,7 +91,10 @@ class CommandService:
 
     def _cmd_reset(self, args, session_id):
         if self._session and session_id:
-            self._session.clear_session(session_id)
+            # Pass user_id for session isolation
+            from flask import g, session as flask_session
+            user_id = getattr(g, "user_id", None) or flask_session.get("user_id", "default")
+            self._session.clear_session(session_id, user_id=user_id)
         return {
             "response": "Conversation has been reset. Let's start fresh! 🔄",
             "action": "reset_conversation",
