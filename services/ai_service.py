@@ -212,7 +212,7 @@ class AIService:
             elif provider == "groq" and self._groq_configured():
                 ai_response, active_model = self._generate_groq(chat_messages, qa)
             else:
-                raise NovaProviderError("No AI provider available for '%s'" % provider)
+                log.warning("No AI provider keys configured for '%s' — returning fallback response", provider)
 
             # Record success in tracker
             if self._tracker:

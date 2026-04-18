@@ -174,6 +174,15 @@ def _load_persisted_settings():
             for key, value in saved.items():
                 if key in _PERSISTABLE_FIELDS and key in NOVA_SETTINGS:
                     NOVA_SETTINGS[key] = value
+            # Validate provider — reject empty/invalid values
+            _valid_providers = ("groq", "nvidia", "balanced")
+            if not NOVA_SETTINGS.get("provider") or NOVA_SETTINGS["provider"] not in _valid_providers:
+                import logging
+                logging.getLogger("config").warning(
+                    "Invalid persisted provider '%s' — resetting to 'groq'",
+                    NOVA_SETTINGS.get("provider", "<empty>"),
+                )
+                NOVA_SETTINGS["provider"] = "groq"
             # Validate groq model — reject decommissioned ones
             if NOVA_SETTINGS["groq_model"] not in _VALID_GROQ_MODELS:
                 import logging
