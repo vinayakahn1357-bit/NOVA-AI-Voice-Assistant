@@ -116,6 +116,13 @@ class AIService:
 
     def _resolve_provider(self, provider):
         """Resolve the effective provider. V2: groq, nvidia, or balanced."""
+        import os
+
+        # Fallback: if provider is empty/None, read from env or default to groq
+        if not provider:
+            provider = os.getenv("NOVA_PROVIDER", "groq")
+            log.warning("No provider set, defaulting to '%s'", provider)
+
         # 'balanced' is managed externally by hybrid_service — treat as groq for internal resolution
         if provider == "balanced":
             return "groq" if self._groq_configured() else "nvidia"
@@ -123,15 +130,19 @@ class AIService:
             if self._groq_configured():
                 log.info("NVIDIA not configured; falling back to Groq")
                 return "groq"
-            raise NovaProviderError("No AI provider configured.")
+            log.warning("No AI provider API keys configured — defaulting to 'groq' (calls will fail until keys are set)")
+            return "groq"
         if provider == "groq" and not self._groq_configured():
             if self._nvidia_configured():
                 log.info("Groq not configured; falling back to NVIDIA")
                 return "nvidia"
-            raise NovaProviderError("No AI provider configured.")
+            log.warning("No AI provider API keys configured — defaulting to 'groq' (calls will fail until keys are set)")
+            return "groq"
         # Clamp unknown providers to groq
         if provider not in ("groq", "nvidia"):
+            log.warning("Unknown provider '%s', defaulting to 'groq'", provider)
             return "groq" if self._groq_configured() else "nvidia"
+        log.info("Provider resolved: %s", provider)
         return provider
 
     def _get_failover(self, failed_provider):
