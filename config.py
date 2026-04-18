@@ -49,26 +49,17 @@ ADMIN_EMAILS = [
     if e.strip()
 ]
 
-# ─── Ollama ────────────────────────────────────────────────────────────────────
-# PRODUCTION: Always use cloud URL, never localhost
-if NOVA_ENV == "local":
-    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-else:
-    # Strictly cloud — no localhost fallback
-    _cloud_url = os.getenv("OLLAMA_CLOUD_URL", os.getenv("OLLAMA_API_URL", ""))
-    if _cloud_url and ("localhost" in _cloud_url or "127.0.0.1" in _cloud_url):
-        raise RuntimeError(
-            "FATAL: OLLAMA_CLOUD_URL points to localhost in production mode. "
-            "Set it to a remote cloud endpoint (e.g. https://api.ollama.com/api/generate)."
-        )
-    OLLAMA_URL = _cloud_url or "https://api.ollama.com/api/generate"
-
+# ─── Provider API URLs ─────────────────────────────────────────────────────────
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+NVIDIA_API_URL = os.getenv(
+    "NVIDIA_BASE_URL",
+    "https://integrate.api.nvidia.com/v1/chat/completions",
+)
 
 # ─── Default Provider ─────────────────────────────────────────────────────────
-_default_provider = os.getenv("NOVA_PROVIDER", "ollama")
-if NOVA_LIVE_MODE and _default_provider == "ollama":
-    _default_provider = "groq" if os.getenv("GROQ_API_KEY") else "ollama_cloud"
+_default_provider = os.getenv("NOVA_PROVIDER", "groq")
+if _default_provider not in ("groq", "nvidia", "balanced"):
+    _default_provider = "groq"
 
 # ─── Default System Prompt (Assistant-Level Personality) ───────────────────────
 DEFAULT_SYSTEM_PROMPT = (
@@ -88,14 +79,13 @@ DEFAULT_SYSTEM_PROMPT = (
     "- **Natural tone.** Speak like a smart human friend — confident, slightly playful, "
     "never robotic. Use lists/headers only when they genuinely help clarity.\n\n"
     "## Identity\n"
-    "- You are Nova. Never mention Ollama, Groq, LLaMA, or any underlying model.\n"
+    "- You are Nova. Never mention NVIDIA, Groq, LLaMA, or any underlying model.\n"
     "- You were created to be the most helpful AI assistant possible.\n"
     "- Your knowledge is broad and deep. Your responses should reflect expertise.\n"
 )
 
 # ─── Nova Settings (mutable at runtime via /settings) ─────────────────────────
 NOVA_SETTINGS = {
-    "model":                os.getenv("OLLAMA_DEFAULT_MODEL", "mistral"),
     "temperature":          float(os.getenv("NOVA_TEMPERATURE", "0.75")),
     "top_p":                float(os.getenv("NOVA_TOP_P", "0.9")),
     "num_predict":          int(os.getenv("NOVA_MAX_TOKENS", "1024")),
@@ -103,11 +93,22 @@ NOVA_SETTINGS = {
     "provider":             _default_provider,
     "groq_api_key":         os.getenv("GROQ_API_KEY", ""),
     "groq_model":           os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-    "ollama_api_key":       os.getenv("OLLAMA_API_KEY", ""),
-    "ollama_cloud_url":     os.getenv("OLLAMA_CLOUD_URL", "https://api.ollama.com/api/generate"),
-    "hybrid_ollama_model":  os.getenv("NOVA_HYBRID_OLLAMA_MODEL", "mistral"),
-    "hybrid_groq_model":    os.getenv("NOVA_HYBRID_GROQ_MODEL", "llama-3.3-70b-versatile"),
+    "nvidia_api_key":       os.getenv("NVIDIA_API_KEY", ""),
+    "nvidia_model":         os.getenv("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct"),
 }
+
+# ─── Valid model lists (to reject decommissioned models on load) ───────────────
+_VALID_GROQ_MODELS = {
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+}
+_VALID_NVIDIA_MODELS = {
+    "meta/llama-3.1-70b-instruct",
+    "mistralai/mixtral-8x22b-instruct-v0.1",
+    "google/gemma-3-27b-it",
+}
+_FALLBACK_GROQ_MODEL   = "llama-3.3-70b-versatile"
+_FALLBACK_NVIDIA_MODEL = "meta/llama-3.1-70b-instruct"
 
 # ─── Session History ───────────────────────────────────────────────────────────
 MAX_HISTORY = int(os.getenv("NOVA_MAX_HISTORY", "30"))
@@ -159,9 +160,8 @@ _SETTINGS_FILE = os.path.join("/tmp" if IS_VERCEL else BASE_DIR, "nova_settings.
 
 # Safe fields to persist (NEVER persist API keys to disk)
 _PERSISTABLE_FIELDS = {
-    "model", "temperature", "top_p", "num_predict", "system_prompt",
-    "provider", "groq_model", "ollama_cloud_url",
-    "hybrid_ollama_model", "hybrid_groq_model",
+    "temperature", "top_p", "num_predict", "system_prompt",
+    "provider", "groq_model", "nvidia_model",
 }
 
 def _load_persisted_settings():
@@ -173,6 +173,22 @@ def _load_persisted_settings():
             for key, value in saved.items():
                 if key in _PERSISTABLE_FIELDS and key in NOVA_SETTINGS:
                     NOVA_SETTINGS[key] = value
+            # Validate groq model — reject decommissioned ones
+            if NOVA_SETTINGS["groq_model"] not in _VALID_GROQ_MODELS:
+                import logging
+                logging.getLogger("config").warning(
+                    "Decommissioned groq_model '%s' detected — resetting to '%s'",
+                    NOVA_SETTINGS["groq_model"], _FALLBACK_GROQ_MODEL,
+                )
+                NOVA_SETTINGS["groq_model"] = _FALLBACK_GROQ_MODEL
+            # Validate nvidia model — reject decommissioned ones
+            if NOVA_SETTINGS["nvidia_model"] not in _VALID_NVIDIA_MODELS:
+                import logging
+                logging.getLogger("config").warning(
+                    "Decommissioned nvidia_model '%s' detected — resetting to '%s'",
+                    NOVA_SETTINGS["nvidia_model"], _FALLBACK_NVIDIA_MODEL,
+                )
+                NOVA_SETTINGS["nvidia_model"] = _FALLBACK_NVIDIA_MODEL
     except Exception:
         pass  # File corrupt or inaccessible — use env defaults
 
@@ -200,6 +216,6 @@ def build_provider_config() -> dict:
         "provider":         NOVA_SETTINGS["provider"],
         "groq_api_key":     NOVA_SETTINGS["groq_api_key"],
         "groq_model":       NOVA_SETTINGS["groq_model"],
-        "ollama_api_key":   NOVA_SETTINGS["ollama_api_key"],
-        "ollama_cloud_url": NOVA_SETTINGS["ollama_cloud_url"],
+        "nvidia_api_key":   NOVA_SETTINGS["nvidia_api_key"],
+        "nvidia_model":     NOVA_SETTINGS["nvidia_model"],
     }

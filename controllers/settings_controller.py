@@ -1,5 +1,5 @@
 """
-controllers/settings_controller.py - Settings Management for NOVA
+controllers/settings_controller.py - Settings Management for NOVA V2
 Handles GET/POST settings and model listing with strict RBAC enforcement.
 Admin users see full config (keys masked); normal users see ONLY safe fields.
 API keys are NEVER sent to the frontend — only has_*_key booleans.
@@ -16,12 +16,11 @@ log = get_logger("settings")
 
 # --- Sensitive fields that only admins can view/edit ---
 _ADMIN_ONLY_VIEW = {
-    "ollama_cloud_url", "provider",
+    "provider",
 }
 
 _ADMIN_ONLY_EDIT = {
-    "groq_api_key", "ollama_api_key",
-    "ollama_cloud_url", "provider",
+    "groq_api_key", "nvidia_api_key",
 }
 
 
@@ -38,21 +37,18 @@ def get_current_settings(role="user"):
     if role == "admin":
         return {
             # Model config
-            "model":                settings["model"],
             "temperature":          settings["temperature"],
             "top_p":                settings["top_p"],
             "num_predict":          settings["num_predict"],
             "system_prompt":        settings["system_prompt"],
             # Provider config (admin only)
             "provider":             settings["provider"],
-            "ollama_cloud_url":     settings["ollama_cloud_url"],
             # API key presence (NEVER actual values)
             "has_groq_key":         bool(settings["groq_api_key"]),
-            "has_ollama_key":       bool(settings["ollama_api_key"]),
+            "has_nvidia_key":       bool(settings["nvidia_api_key"]),
             # Model names
             "groq_model":           settings["groq_model"],
-            "hybrid_ollama_model":  settings["hybrid_ollama_model"],
-            "hybrid_groq_model":    settings["hybrid_groq_model"],
+            "nvidia_model":         settings["nvidia_model"],
             # System
             "live_mode":            NOVA_LIVE_MODE,
             "role":                 "admin",
@@ -60,14 +56,12 @@ def get_current_settings(role="user"):
 
     # Normal user: NO API keys, NO URLs, NO provider internals
     return {
-        "model":                settings["model"],
         "temperature":          settings["temperature"],
         "top_p":                settings["top_p"],
         "num_predict":          settings["num_predict"],
         "system_prompt":        settings["system_prompt"],
         "groq_model":           settings["groq_model"],
-        "hybrid_ollama_model":  settings["hybrid_ollama_model"],
-        "hybrid_groq_model":    settings["hybrid_groq_model"],
+        "nvidia_model":         settings["nvidia_model"],
         "live_mode":            NOVA_LIVE_MODE,
         "role":                 "user",
     }
@@ -85,8 +79,6 @@ def update_settings(data, role="user"):
     log.info("Settings POST: role=%s fields=%s", role, list(data.keys()))
 
     # --- Fields anyone can edit ---
-    if "model" in data:
-        settings["model"] = str(data["model"])
     if "temperature" in data:
         settings["temperature"] = max(0.0, min(2.0, float(data["temperature"])))
     if "top_p" in data:
@@ -98,28 +90,18 @@ def update_settings(data, role="user"):
         settings["system_prompt"] = sp if sp else DEFAULT_SYSTEM_PROMPT
     if "groq_model" in data:
         settings["groq_model"] = str(data["groq_model"])
-    if "hybrid_ollama_model" in data:
-        settings["hybrid_ollama_model"] = str(data["hybrid_ollama_model"])
-    if "hybrid_groq_model" in data:
-        settings["hybrid_groq_model"] = str(data["hybrid_groq_model"])
+    if "nvidia_model" in data:
+        settings["nvidia_model"] = str(data["nvidia_model"])
 
     # --- Admin-only fields ---
 
     if "provider" in data:
-        if role == "admin":
-            requested = data["provider"]
-            allowed = (
-                ("ollama_cloud", "groq", "hybrid")
-                if NOVA_LIVE_MODE
-                else ("ollama", "ollama_cloud", "groq", "hybrid")
-            )
-            if requested in allowed:
-                settings["provider"] = requested
-            elif NOVA_LIVE_MODE and requested == "ollama":
-                log.info("Rejected provider 'ollama' in live mode")
+        requested = str(data["provider"])
+        allowed = ("groq", "nvidia", "balanced")
+        if requested in allowed:
+            settings["provider"] = requested
         else:
-            blocked_fields.append("provider")
-            log.warning("RBAC: non-admin tried to change provider")
+            log.info("Rejected invalid provider '%s'", requested)
 
     if "groq_api_key" in data:
         if role == "admin":
@@ -131,28 +113,18 @@ def update_settings(data, role="user"):
             blocked_fields.append("groq_api_key")
             log.warning("RBAC: non-admin tried to change groq_api_key")
 
-    if "ollama_api_key" in data:
+    if "nvidia_api_key" in data:
         if role == "admin":
-            key = str(data["ollama_api_key"]).strip()
+            key = str(data["nvidia_api_key"]).strip()
             if key and not key.startswith("****"):
-                settings["ollama_api_key"] = key
-                log.info("Admin updated ollama_api_key")
+                settings["nvidia_api_key"] = key
+                log.info("Admin updated nvidia_api_key")
         else:
-            blocked_fields.append("ollama_api_key")
-            log.warning("RBAC: non-admin tried to change ollama_api_key")
+            blocked_fields.append("nvidia_api_key")
+            log.warning("RBAC: non-admin tried to change nvidia_api_key")
 
-    if "ollama_cloud_url" in data:
-        if role == "admin":
-            url = str(data["ollama_cloud_url"]).strip()
-            if url:
-                settings["ollama_cloud_url"] = url
-                log.info("Admin updated ollama_cloud_url")
-        else:
-            blocked_fields.append("ollama_cloud_url")
-            log.warning("RBAC: non-admin tried to change ollama_cloud_url")
-
-    log.info("Settings updated: provider=%s model=%s role=%s blocked=%s",
-             settings["provider"], settings["model"], role, blocked_fields or "none")
+    log.info("Settings updated: provider=%s role=%s blocked=%s",
+             settings["provider"], role, blocked_fields or "none")
 
     # Persist non-sensitive settings to disk
     save_settings_to_disk()
@@ -162,10 +134,8 @@ def update_settings(data, role="user"):
         "role": role,
         "settings": {
             "provider":             settings["provider"],
-            "model":                settings["model"],
             "groq_model":           settings["groq_model"],
-            "hybrid_ollama_model":  settings["hybrid_ollama_model"],
-            "hybrid_groq_model":    settings["hybrid_groq_model"],
+            "nvidia_model":         settings["nvidia_model"],
         }
     }
 
@@ -190,53 +160,25 @@ def list_models():
     groq_models = [
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "llama3-70b-8192",
-        "llama3-8b-8192",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it",
     ]
+
+    nvidia_models = [
+        # Verified working on this account
+        "meta/llama-3.1-70b-instruct",
+        "mistralai/mixtral-8x22b-instruct-v0.1",
+        "google/gemma-3-27b-it",
+    ]
+
+    if provider == "nvidia":
+        return {"models": nvidia_models, "provider": "nvidia"}
 
     if provider == "groq":
         return {"models": groq_models, "provider": "groq"}
 
-    if provider == "hybrid":
-        # Return both sets for hybrid mode
-        ollama = _fetch_ollama_models(settings)
-        return {
-            "models": ollama,
-            "provider": "ollama",
-            "groq_models": groq_models,
-        }
-
-    if provider == "ollama_cloud":
-        return {"models": _fetch_ollama_models(settings), "provider": "ollama_cloud"}
-
-    # Local Ollama
-    if NOVA_ENV == "local":
-        try:
-            r = _model_session.get("http://localhost:11434/api/tags", timeout=5)
-            if r.status_code == 200:
-                models = [m["name"] for m in r.json().get("models", [])]
-                return {"models": models, "provider": "ollama"}
-        except Exception:
-            pass
-
+    # Default: return both
     return {
-        "models": ["mistral", "llama3", "gemma2", "phi3", "codellama"],
-        "provider": "ollama",
+        "models": groq_models,
+        "groq_models": groq_models,
+        "nvidia_models": nvidia_models,
+        "provider": provider,
     }
-
-
-def _fetch_ollama_models(settings):
-    """Fetch model list from Ollama Cloud API."""
-    try:
-        tags_url = settings["ollama_cloud_url"].replace("/api/generate", "/api/tags")
-        cloud_headers = {"Authorization": "Bearer " + settings["ollama_api_key"]}
-        r = _model_session.get(tags_url, headers=cloud_headers, timeout=8)
-        if r.status_code == 200:
-            models = [m["name"] for m in r.json().get("models", [])]
-            if models:
-                return models
-    except Exception:
-        pass
-    return ["mistral", "llama3", "gemma2", "phi3", "deepseek-r1"]

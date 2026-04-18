@@ -50,7 +50,7 @@ class TestHTTPSessionPool:
         assert isinstance(http_adapter, HTTPAdapter)
 
     def test_provider_methods_are_not_static(self):
-        """_call_groq and _call_ollama_local should be instance methods (not static)."""
+        """_call_groq and _call_nvidia should be instance methods (not static)."""
         from services.ai_service import AIService
 
         # These should NOT have __func__ that's a staticmethod
@@ -59,5 +59,5 @@ class TestHTTPSessionPool:
         ), "_call_groq should be an instance method, not static"
 
         assert not isinstance(
-            AIService.__dict__.get("_call_ollama_local"), staticmethod
-        ), "_call_ollama_local should be an instance method, not static"
+            AIService.__dict__.get("_call_nvidia"), staticmethod
+        ), "_call_nvidia should be an instance method, not static"

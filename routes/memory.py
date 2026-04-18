@@ -44,8 +44,12 @@ def generate_summary():
     history = _session_service.get_history(session_id)
     if history:
         settings = get_settings()
+        active_model = (
+            settings["nvidia_model"] if settings.get("provider") == "nvidia"
+            else settings["groq_model"]
+        )
         _memory_service.generate_daily_summary(
-            history, settings["model"], build_provider_config()
+            history, active_model, build_provider_config()
         )
         return jsonify({"status": "ok", "message": "Daily summary generation started."})
     return jsonify({"status": "skipped", "message": "No conversation history for this session."})

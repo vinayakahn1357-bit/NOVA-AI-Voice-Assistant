@@ -101,7 +101,7 @@ class QueryAnalyzer:
             "word_count": int,
             "has_code": bool,
             "prefers_groq": bool,    # hint for hybrid mode
-            "prefers_ollama": bool,  # hint for hybrid mode
+            "prefers_nvidia": bool,  # hint for advanced reasoning
         }
         """
         if not message or not message.strip():
@@ -118,7 +118,7 @@ class QueryAnalyzer:
 
         # Determine model preference hints for hybrid mode
         prefers_groq = complexity >= 6 or query_type in ("coding", "reasoning", "complex_task", "math")
-        prefers_ollama = complexity <= 3 or query_type in ("greeting", "simple_qa", "conversation")
+        prefers_nvidia = complexity >= 8 or query_type in ("coding", "reasoning", "complex_task", "math")
 
         result = {
             "query_type": query_type,
@@ -128,13 +128,13 @@ class QueryAnalyzer:
             "word_count": word_count,
             "has_code": has_code,
             "prefers_groq": prefers_groq,
-            "prefers_ollama": prefers_ollama,
+            "prefers_nvidia": prefers_nvidia,
         }
 
         log.info(
-            "Query analysis: type=%s complexity=%d tokens=%d words=%d groq=%s ollama=%s",
+            "Query analysis: type=%s complexity=%d tokens=%d words=%d groq=%s nvidia=%s",
             query_type, complexity, config["optimal_tokens"], word_count,
-            prefers_groq, prefers_ollama,
+            prefers_groq, prefers_nvidia,
         )
 
         return result
@@ -200,5 +200,5 @@ class QueryAnalyzer:
             "word_count": 0,
             "has_code": False,
             "prefers_groq": False,
-            "prefers_ollama": False,
+            "prefers_nvidia": False,
         }

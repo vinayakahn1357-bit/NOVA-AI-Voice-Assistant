@@ -19,20 +19,22 @@ _SENSITIVE_PATTERNS = [
     r"(?i)\bFLASK_SECRET\b",
     r"(?i)\bGROQ_API_KEY\b",
     r"(?i)\bOLLAMA_API_KEY\b",
+    r"(?i)\bNVIDIA_API_KEY\b",
     r"(?i)\bGOOGLE_CLIENT_SECRET\b",
     r"(?i)\bGOOGLE_CLIENT_ID\b",
     r"(?i)\bNOVA_PROVIDER\b",
     r"(?i)\bNOVA_LIVE_MODE\b",
-    r"(?i)\bOLLAMA_CLOUD_URL\b",
-    r"(?i)\bOLLAMA_DEFAULT_MODEL\b",
+    r"(?i)\bNVIDIA_BASE_URL\b",
+    r"(?i)\bNVIDIA_MODEL\b",
     r"(?i)\bNOVA_TEMPERATURE\b",
     r"(?i)\bNOVA_MAX_TOKENS\b",
     r"(?i)\bADMIN_EMAILS\b",
     r"(?i)\bSECRET_KEY\b",
     r"(?i)\bAPI_KEY\b",
 
-    # API key patterns (Groq keys start with gsk_)
+    # API key patterns (Groq keys start with gsk_, NVIDIA with nvapi-)
     r"\bgsk_[A-Za-z0-9]{10,}\b",
+    r"\bnvapi-[A-Za-z0-9_]{10,}\b",
 
     # Internal code / config references
     r"(?i)\bDEFAULT_SYSTEM_PROMPT\b",
@@ -45,7 +47,7 @@ _SENSITIVE_PATTERNS = [
 
     # System prompt fragments that confirm internal instructions
     r"(?i)\bcore behaviours?\b",
-    r"(?i)\bnever mention ollama.{0,15}groq.{0,15}llama\b",
+    r"(?i)\bnever mention nvidia.{0,15}groq.{0,15}llama\b",
     r"(?i)\byou are nova .{0,30}senior.level ai\b",
     r"(?i)\bprompt_augment\b",
     r"(?i)\bagent.?mode\b",
@@ -66,7 +68,7 @@ _SYSTEM_PROMPT_KEYWORDS = [
     "remember everything",
     "show, don't tell",
     "never hallucinate facts",
-    "never mention ollama",
+    "never mention nvidia",
     "underlying model",
 ]
 

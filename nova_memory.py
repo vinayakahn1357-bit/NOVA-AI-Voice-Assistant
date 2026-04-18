@@ -28,12 +28,11 @@ log = get_logger("nova_memory")
 if os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV"):
     DB_FILE      = "/tmp/nova_memory.db"
     LEGACY_JSON  = "/tmp/nova_memory.json"
-    OLLAMA_URL   = None  # No local Ollama on Vercel
 else:
     DB_FILE      = os.path.join(os.path.dirname(__file__), "nova_memory.db")
     LEGACY_JSON  = os.path.join(os.path.dirname(__file__), "nova_memory.json")
-    OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 _DDL = """
 PRAGMA journal_mode = WAL;
@@ -278,13 +277,13 @@ class NovaMemory:
         """
         Call an LLM via the best available provider.
         Returns the raw text response, or empty string on failure.
-        Routes: Groq API → Ollama Cloud → Local Ollama (in priority order).
+        Routes: Groq API → NVIDIA API (in priority order).
         """
-        provider = provider_config.get("provider", "ollama")
+        provider = provider_config.get("provider", "groq")
 
         # ── Try Groq first if configured ──────────────────────────────
         groq_key = provider_config.get("groq_api_key", "")
-        if groq_key and provider in ("groq", "hybrid"):
+        if groq_key:
             groq_model = provider_config.get("groq_model", "llama-3.3-70b-versatile")
             try:
                 headers = {
@@ -307,39 +306,30 @@ class NovaMemory:
             except Exception as e:
                 log.warning("Groq extraction failed: %s", e)
 
-        # ── Try Ollama Cloud if configured ────────────────────────────
-        cloud_key = provider_config.get("ollama_api_key", "")
-        cloud_url = provider_config.get("ollama_cloud_url", "")
-        if cloud_key and cloud_url and provider in ("ollama_cloud", "hybrid"):
+        # ── Fallback to NVIDIA if configured ──────────────────────────
+        nvidia_key = provider_config.get("nvidia_api_key", "")
+        if nvidia_key:
+            nvidia_model = provider_config.get("nvidia_model", "nvidia/llama-3.3-70b-instruct")
             try:
-                headers = {"Authorization": f"Bearer {cloud_key}"}
-                payload = {
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                headers = {
+                    "Authorization": f"Bearer {nvidia_key}",
+                    "Content-Type": "application/json",
                 }
-                r = requests.post(cloud_url, json=payload,
+                payload = {
+                    "model": nvidia_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                }
+                r = requests.post(NVIDIA_API_URL, json=payload,
                                   headers=headers, timeout=30)
                 if r.status_code == 200:
-                    return r.json().get("response", "").strip()
+                    data = r.json()
+                    return (data.get("choices", [{}])[0]
+                            .get("message", {}).get("content", "")).strip()
             except Exception as e:
-                log.warning("Ollama Cloud extraction failed: %s", e)
-
-        # ── Fallback to local Ollama (skip on Vercel where OLLAMA_URL is None) ─
-        if OLLAMA_URL:
-            try:
-                payload = {
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": temperature, "num_predict": max_tokens},
-                }
-                r = requests.post(OLLAMA_URL, json=payload, timeout=30)
-                if r.status_code == 200:
-                    return r.json().get("response", "").strip()
-            except Exception as e:
-                log.warning("Local Ollama extraction failed: %s", e)
+                log.warning("NVIDIA extraction failed: %s", e)
 
         return ""
 
@@ -376,7 +366,7 @@ class NovaMemory:
         Run in a background thread after each conversation turn.
         Asks the LLM to extract facts / interests / preferences.
         provider_config: {"provider": str, "groq_api_key": str, "groq_model": str,
-                          "ollama_api_key": str, "ollama_cloud_url": str}
+                          "nvidia_api_key": str, "nvidia_model": str}
         """
         self._extract_worker(user_msg, nova_reply, model, provider_config or {})
 

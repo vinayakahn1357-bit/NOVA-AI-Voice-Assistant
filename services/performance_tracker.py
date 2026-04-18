@@ -117,7 +117,7 @@ class PerformanceTracker:
 
     def __init__(self):
         self._providers = {
-            "ollama": ProviderMetrics("ollama"),
+            "nvidia": ProviderMetrics("nvidia"),
             "groq": ProviderMetrics("groq"),
         }
         self._groq_usage_count = 0
@@ -181,6 +181,6 @@ class PerformanceTracker:
         p = provider.lower().strip()
         if "groq" in p:
             return "groq"
-        if "ollama" in p:
-            return "ollama"
+        if "nvidia" in p:
+            return "nvidia"
         return p

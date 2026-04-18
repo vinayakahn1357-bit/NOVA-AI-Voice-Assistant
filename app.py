@@ -14,7 +14,7 @@ from flask import Flask
 
 from config import (
     BASE_DIR, FRONTEND_DIR, FLASK_SECRET_KEY, SESSION_LIFETIME_SECONDS,
-    NOVA_ENV, NOVA_LIVE_MODE, OLLAMA_URL, DATABASE_URL, REDIS_URL, IS_VERCEL,
+    NOVA_ENV, NOVA_LIVE_MODE, DATABASE_URL, REDIS_URL, IS_VERCEL,
 )
 from utils.logger import get_logger
 from utils.errors import register_error_handlers
@@ -103,10 +103,8 @@ from services.session_service import SessionService
 from services.prompt_builder import PromptBuilder
 from services.ai_service import AIService
 from services.command_service import CommandService
-from services.hybrid_evaluator import HybridEvaluator
 from services.cache_service import CacheService
 from services.query_analyzer import QueryAnalyzer
-from services.ollama_validator import OllamaValidator
 from services.performance_tracker import PerformanceTracker
 from services.model_router import ModelRouter
 from services.agent_engine import AgentEngine
@@ -116,23 +114,21 @@ from utils.response_sanitizer import ResponseSanitizer
 from services.response_pipeline import ResponsePipeline
 from controllers.chat_controller import ChatController
 
-# Wire services together (Phase 6: inject Redis, DbMemory, PluginManager)
+# Wire services together (Phase V2: Groq + NVIDIA dual-provider)
 memory_service      = MemoryService(memory_engine, bg_pool, db_memory=db_memory)
 session_service     = SessionService(memory_engine._conn)
 prompt_builder      = PromptBuilder(memory_service)
-hybrid_evaluator    = HybridEvaluator()
 cache_service       = CacheService(redis_service=redis_service)
 query_analyzer      = QueryAnalyzer()
 response_formatter  = ResponseFormatter()
 response_sanitizer  = ResponseSanitizer()
-ollama_validator    = OllamaValidator()
 performance_tracker = PerformanceTracker()
 model_router        = ModelRouter(performance_tracker)
 tool_executor       = ToolExecutor(plugin_manager=plugin_manager)
 agent_engine        = AgentEngine(tool_executor)
 ai_service          = AIService(
-    prompt_builder, hybrid_evaluator, cache_service,
-    query_analyzer, response_formatter, ollama_validator,
+    prompt_builder, None, cache_service,
+    query_analyzer, response_formatter, None,
     model_router, performance_tracker,
 )
 command_service     = CommandService(session_service, memory_service)
@@ -273,8 +269,7 @@ import routes.memory as memory_routes
 memory_routes.init_app(memory_service, session_service)
 
 import routes.system as system_routes
-system_routes.init_app(GPU_INFO, CPU_CORES_LOGICAL, CPU_CORES_PHYSICAL, _BG_WORKERS,
-                       ollama_validator)
+system_routes.init_app(GPU_INFO, CPU_CORES_LOGICAL, CPU_CORES_PHYSICAL, _BG_WORKERS)
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(chat_bp)
@@ -292,13 +287,12 @@ log.info("BG pool: %d workers", _BG_WORKERS)
 log.info("ENV: %s | Provider: %s", NOVA_ENV, ai_service._resolve_provider(
     __import__('config').get_settings()['provider']
 ))
-log.info("Hybrid evaluator: ACTIVE | Cache: ACTIVE (TTL=%ds, backend=%s)",
+log.info("Cache: ACTIVE (TTL=%ds, backend=%s)",
          __import__('config').CACHE_TTL,
          "Redis" if redis_service.is_available else "in-memory")
 log.info("Retry: max=%d backoff=%.1fs",
          __import__('config').MAX_RETRY, __import__('config').RETRY_BACKOFF)
-if NOVA_ENV == "production":
-    log.info("Production mode - Ollama Local DISABLED, localhost BLOCKED")
+log.info("V2 dual-provider: Groq (default) + NVIDIA (reasoning)")
 log.info("Adaptive intelligence: ACTIVE (query_analyzer + response_formatter)")
 log.info("Response pipeline: ACTIVE (analyze -> agent -> route -> generate -> format -> sanitize)")
 log.info("Security sanitizer: ACTIVE")

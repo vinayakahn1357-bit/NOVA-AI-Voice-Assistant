@@ -71,12 +71,12 @@ class PromptBuilder:
             log.warning("personality_service not available")
         return ""
 
-    # ─── Ollama Format ────────────────────────────────────────────────────
+    # ─── Plain Text Format (legacy) ───────────────────────────────────────
 
-    def build_ollama_prompt(self, history: list, personality: str = "default") -> str:
+    def build_plain_prompt(self, history: list, personality: str = "default") -> str:
         """
-        Build a single prompt string for Ollama-style API.
-        Identical content to chat messages but in Ollama's format.
+        Build a single prompt string for plain-text API format.
+        Both Groq and NVIDIA use chat messages format instead.
 
         Structure:
             [System prompt + Personality + Memory]
@@ -99,7 +99,7 @@ class PromptBuilder:
     def build_chat_messages(self, history: list, personality: str = "default") -> list:
         """
         Build OpenAI/Groq-format messages list.
-        Identical system context as Ollama, just different format.
+        Identical system context as plain prompt, just different format.
 
         Returns: [
             {"role": "system", "content": system + personality + memory},

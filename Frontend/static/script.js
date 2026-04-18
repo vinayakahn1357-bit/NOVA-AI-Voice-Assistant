@@ -1435,20 +1435,101 @@ async function loadAvailableModels() {
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
-    model: 'mistral',
+    groq_model: 'llama-3.3-70b-versatile',
+    nvidia_model: 'meta/llama-3.1-70b-instruct',
     temperature: 0.75,
     top_p: 0.9,
     num_predict: 1024,
     system_prompt: '',
     stream_mode: true,
-    provider: 'hybrid',
+    provider: 'groq',
 };
 
+// ─── Advanced Settings Toggle ────────────────────────────────────────────────
+function toggleAdvancedSettings() {
+    const body = document.getElementById('advanced-settings-body');
+    const chevron = document.getElementById('advanced-chevron');
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : '';
+    chevron.classList.toggle('open', !isOpen);
+}
+
+// ─── Model Quality Selector (User-Friendly Abstraction) ──────────────────────
+// Maps simplified quality tiers to backend settings
+const MODEL_QUALITY_MAP = {
+    fast: {
+        temperature: 0.6,
+        num_predict: 512,
+        groq_model: 'llama-3.1-8b-instant',
+        nvidia_model: 'meta/llama-3.1-70b-instruct',
+        provider: 'groq',
+        label: '⚡ Fast'
+    },
+    balanced: {
+        temperature: 0.75,
+        num_predict: 1024,
+        groq_model: 'llama-3.3-70b-versatile',
+        nvidia_model: 'meta/llama-3.1-70b-instruct',
+        provider: 'balanced',
+        label: '⚖️ Balanced'
+    },
+    powerful: {
+        temperature: 0.8,
+        num_predict: 2048,
+        groq_model: 'llama-3.3-70b-versatile',
+        nvidia_model: 'meta/llama-3.1-70b-instruct',
+        provider: 'nvidia',
+        label: '🧠 Powerful'
+    }
+};
+
+let currentModelQuality = 'balanced';
+
+function selectModelQuality(quality) {
+    currentModelQuality = quality;
+    const config = MODEL_QUALITY_MAP[quality];
+    if (!config) return;
+
+    // Update UI cards
+    document.querySelectorAll('.model-quality-card').forEach(c => c.classList.remove('active'));
+    const activeCard = document.querySelector(`.model-quality-card[data-quality="${quality}"]`);
+    if (activeCard) activeCard.classList.add('active');
+
+    // Sync to underlying controls (without opening advanced)
+    const tempEl = document.getElementById('settings-temperature');
+    if (tempEl) {
+        tempEl.value = config.temperature;
+        document.getElementById('temp-display').textContent = config.temperature.toFixed(2);
+    }
+    const tokEl = document.getElementById('settings-tokens');
+    if (tokEl) {
+        tokEl.value = config.num_predict;
+        document.getElementById('tokens-display').textContent = config.num_predict;
+    }
+    const groqModelEl = document.getElementById('settings-groq-model');
+    if (groqModelEl) groqModelEl.value = config.groq_model;
+    const nvidiaModelEl = document.getElementById('settings-nvidia-model');
+    if (nvidiaModelEl) nvidiaModelEl.value = config.nvidia_model;
+
+    // Switch provider if quality tier implies it
+    if (config.provider) setProvider(config.provider);
+
+    // Update model badge
+    updateModelBadge(config.label);
+}
+
+// Detect quality from current settings (reverse mapping)
+function _detectModelQuality(temperature, numPredict) {
+    temperature = parseFloat(temperature);
+    numPredict = parseInt(numPredict);
+    if (temperature <= 0.65 && numPredict <= 640) return 'fast';
+    if (temperature >= 0.8 && numPredict >= 1536) return 'powerful';
+    return 'balanced';
+}
+
+
 async function openSettings() {
-    // ── Step 1: Fetch live_mode from backend BEFORE loading the UI ──────────
-    // This ensures novaLiveMode is correct when setProvider() runs inside
-    // loadSettingsIntoUI(), so the Ollama Local button is never briefly shown
-    // in live mode.
+    // ── Step 1: Fetch live_mode from backend BEFORE loading the UI
     try {
         const r = await fetch('/settings');
         if (r.ok) {
@@ -1457,21 +1538,10 @@ async function openSettings() {
         }
     } catch { /* server down — keep existing novaLiveMode */ }
 
-    // ── Step 2: Apply live_mode to the Ollama Local button ──────────────────
-    const ollamaLocalBtn = document.getElementById('provider-ollama');
-    if (ollamaLocalBtn) {
-        ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
-    }
-
-    // ── Step 3: If current saved provider is 'ollama' but live, switch to hybrid
-    if (novaLiveMode && currentProvider === 'ollama') {
-        currentProvider = 'hybrid';
-    }
-
-    // ── Step 4: Dynamically populate model dropdowns ──────────────────────
+    // ── Step 2: Dynamically populate model dropdowns
     await fetchAndPopulateModels();
 
-    // ── Step 5: Now safe to load the rest of the settings UI ────────────────
+    // ── Step 3: Now safe to load the rest of the settings UI
     loadSettingsIntoUI();
     document.getElementById('settings-overlay').classList.add('open');
 }
@@ -1486,11 +1556,11 @@ async function fetchAndPopulateModels() {
         if (!r.ok) return;
         const data = await r.json();
         const models = data.models || [];
-        const groqModels = data.groq_models || [];
-        const provider = data.provider || '';
+        const nvidiaModels = data.nvidia_models || [];
+        const provider = data.provider || 'groq';
 
         // Only repopulate if data changed
-        const key = provider + ':' + models.join(',') + ':' + groqModels.join(',');
+        const key = provider + ':' + models.join(',') + ':' + (nvidiaModels || []).join(',');
         if (_cachedModels === key) return;
         _cachedModels = key;
         _cachedModelsProvider = provider;
@@ -1507,14 +1577,14 @@ async function fetchAndPopulateModels() {
             });
         };
 
-        if (provider === 'groq') {
-            fillSelects('groq', models);
+        if (provider === 'nvidia') {
+            fillSelects('nvidia', models);
         } else {
-            fillSelects('ollama', models);
+            fillSelects('groq', models);
         }
-        // Hybrid: backend returns groq_models separately
-        if (groqModels.length) {
-            fillSelects('groq', groqModels);
+        // Also fill nvidia models if returned separately
+        if (nvidiaModels.length) {
+            fillSelects('nvidia', nvidiaModels);
         }
     } catch { /* /models unavailable — keep existing options */ }
 }
@@ -1533,76 +1603,89 @@ function setStreamMode(val) {
     document.getElementById('mode-full').classList.toggle('active', !val);
 }
 
-let currentProvider = 'hybrid';
+let currentProvider = 'groq';
 let novaLiveMode = false; // set from backend /settings live_mode flag
 
 function setProvider(p) {
-    // In live mode, never allow Ollama local
-    if (novaLiveMode && p === 'ollama') p = 'hybrid';
+    // Valid: 'groq', 'nvidia', 'balanced'
+    if (p !== 'groq' && p !== 'nvidia' && p !== 'balanced') p = 'groq';
     currentProvider = p;
-    // Ollama Local button visibility is managed by applySavedSettings / openSettings
-    // (they read live_mode from the server). Here we only force-hide it in live mode.
-    const ollamaBtn = document.getElementById('provider-ollama');
-    if (ollamaBtn) {
-        if (novaLiveMode) ollamaBtn.style.display = 'none'; // always hidden in live mode
-        ollamaBtn.classList.toggle('active', p === 'ollama');
+
+    // Update provider tab buttons
+    const groqBtn = document.getElementById('provider-groq');
+    const nvidiaBtn = document.getElementById('provider-nvidia');
+    const hybridBtn = document.getElementById('provider-balanced');
+    if (groqBtn) groqBtn.classList.toggle('active', p === 'groq');
+    if (nvidiaBtn) nvidiaBtn.classList.toggle('active', p === 'nvidia');
+    if (hybridBtn) hybridBtn.classList.toggle('active', p === 'balanced');
+
+    // adv- aliases (hidden spans kept for compat)
+    const advGroq = document.getElementById('adv-provider-groq');
+    const advNvidia = document.getElementById('adv-provider-nvidia');
+    if (advGroq) advGroq.classList.toggle('active', p === 'groq');
+    if (advNvidia) advNvidia.classList.toggle('active', p === 'nvidia');
+
+    // Show model selector based on mode
+    const groqGroup = document.getElementById('groq-model-group');
+    const nvidiaGroup = document.getElementById('nvidia-model-group');
+    const hybridHint = document.getElementById('hybrid-hint-balanced');
+    if (p === 'groq') {
+        if (groqGroup) groqGroup.style.display = '';
+        if (nvidiaGroup) nvidiaGroup.style.display = 'none';
+        if (hybridHint) hybridHint.style.display = 'none';
+    } else if (p === 'nvidia') {
+        if (groqGroup) groqGroup.style.display = 'none';
+        if (nvidiaGroup) nvidiaGroup.style.display = '';
+        if (hybridHint) hybridHint.style.display = 'none';
+    } else {
+        // balanced: auto-routed, hide individual selectors, show hint
+        if (groqGroup) groqGroup.style.display = 'none';
+        if (nvidiaGroup) nvidiaGroup.style.display = 'none';
+        if (hybridHint) hybridHint.style.display = '';
     }
-    document.getElementById('provider-ollama-cloud').classList.toggle('active', p === 'ollama_cloud');
-    document.getElementById('provider-groq').classList.toggle('active', p === 'groq');
-    document.getElementById('provider-hybrid').classList.toggle('active', p === 'hybrid');
-    document.getElementById('groq-settings').style.display = p === 'groq' ? 'block' : 'none';
-    document.getElementById('ollama-cloud-settings').style.display = p === 'ollama_cloud' ? 'block' : 'none';
-    document.getElementById('hybrid-settings').style.display = p === 'hybrid' ? 'block' : 'none';
-    // Ollama model dropdown: show for local or cloud (hybrid has its own per-column selectors)
-    // In live mode, never show the ollama-settings block for 'ollama' since the button is hidden
-    const showOllamaSettings = (p === 'ollama' && !novaLiveMode) || p === 'ollama_cloud';
-    document.getElementById('ollama-settings').style.display = showOllamaSettings ? 'block' : 'none';
 }
 
 function loadSettingsIntoUI() {
     const saved = JSON.parse(localStorage.getItem('nova_settings') || '{}');
     const s = { ...DEFAULT_SETTINGS, ...saved };
 
-    document.getElementById('settings-model').value = s.model;
+    // settings-model hidden field — set to active model for display
+    const modelDisplayEl = document.getElementById('settings-model');
+    if (modelDisplayEl) {
+        modelDisplayEl.value = s.provider === 'nvidia'
+            ? (s.nvidia_model || DEFAULT_SETTINGS.nvidia_model)
+            : (s.groq_model || DEFAULT_SETTINGS.groq_model);
+    }
     const tempEl = document.getElementById('settings-temperature');
     tempEl.value = s.temperature;
     document.getElementById('temp-display').textContent = parseFloat(s.temperature).toFixed(2);
     const tokEl = document.getElementById('settings-tokens');
     tokEl.value = s.num_predict;
     document.getElementById('tokens-display').textContent = s.num_predict;
-    // Top P slider
+    // Top P (hidden field — just set value)
     const topPEl = document.getElementById('settings-top-p');
-    if (topPEl) {
-        topPEl.value = s.top_p || 0.9;
-        document.getElementById('top-p-display').textContent = parseFloat(s.top_p || 0.9).toFixed(2);
-    }
+    if (topPEl) topPEl.value = s.top_p || 0.9;
     document.getElementById('settings-system-prompt').value = s.system_prompt;
     setStreamMode(s.stream_mode !== false);
 
-    // Provider fields — upgrade 'ollama' to 'hybrid' if live mode is active
-    const savedProvider = (novaLiveMode && s.provider === 'ollama') ? 'hybrid' : (s.provider || 'hybrid');
+    // Sync model quality cards (user-facing abstraction)
+    const detectedQuality = _detectModelQuality(s.temperature, s.num_predict);
+    currentModelQuality = detectedQuality;
+    document.querySelectorAll('.model-quality-card').forEach(c => c.classList.remove('active'));
+    const mqCard = document.querySelector(`.model-quality-card[data-quality="${detectedQuality}"]`);
+    if (mqCard) mqCard.classList.add('active');
+
+    // Provider — groq, nvidia, or balanced
+    const savedProvider = (s.provider === 'groq' || s.provider === 'nvidia' || s.provider === 'balanced') ? s.provider : 'groq';
     setProvider(savedProvider);
-    // Groq (API keys NOT loaded from localStorage — they are never stored there)
-    const groqKeyEl = document.getElementById('settings-groq-key');
-    if (groqKeyEl) groqKeyEl.value = '';  // keys must be re-entered per session
+
+    // Groq model
     const groqModelEl = document.getElementById('settings-groq-model');
     if (groqModelEl && s.groq_model) groqModelEl.value = s.groq_model;
-    // Ollama Cloud
-    const ollamaKeyEl = document.getElementById('settings-ollama-key');
-    if (ollamaKeyEl) ollamaKeyEl.value = '';  // keys must be re-entered per session
-    const ollamaUrlEl = document.getElementById('settings-ollama-url');
-    if (ollamaUrlEl) ollamaUrlEl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
-    // Hybrid fields — keys are NOT in localStorage (security fix)
-    const hOllamaKey = document.getElementById('settings-hybrid-ollama-key');
-    if (hOllamaKey) hOllamaKey.value = '';  // keys must be re-entered per session
-    const hOllamaUrl = document.getElementById('settings-hybrid-ollama-url');
-    if (hOllamaUrl) hOllamaUrl.value = s.ollama_cloud_url || 'https://api.ollama.com/api/generate';
-    const hOllamaModel = document.getElementById('settings-hybrid-ollama-model');
-    if (hOllamaModel && s.hybrid_ollama_model) hOllamaModel.value = s.hybrid_ollama_model;
-    const hGroqKey = document.getElementById('settings-hybrid-groq-key');
-    if (hGroqKey) hGroqKey.value = '';  // keys must be re-entered per session
-    const hGroqModel = document.getElementById('settings-hybrid-groq-model');
-    if (hGroqModel && s.hybrid_groq_model) hGroqModel.value = s.hybrid_groq_model;
+
+    // NVIDIA model
+    const nvidiaModelEl = document.getElementById('settings-nvidia-model');
+    if (nvidiaModelEl && s.nvidia_model) nvidiaModelEl.value = s.nvidia_model;
 
     // Phase 9: Personality
     const savedPers = localStorage.getItem('nova_personality') || 'default';
@@ -1619,32 +1702,13 @@ async function saveSettings() {
     // Per-provider field reads
     const groq_api_key = document.getElementById('settings-groq-key')?.value || '';
     const groq_model = document.getElementById('settings-groq-model')?.value || 'llama-3.3-70b-versatile';
-    const ollama_api_key = document.getElementById('settings-ollama-key')?.value || '';
-    const ollama_cloud_url = document.getElementById('settings-ollama-url')?.value || 'https://api.ollama.com/api/generate';
-    // Hybrid reads — use shared api keys so they sync across modes
-    const h_ollama_key = document.getElementById('settings-hybrid-ollama-key')?.value || '';
-    const h_ollama_url = document.getElementById('settings-hybrid-ollama-url')?.value || 'https://api.ollama.com/api/generate';
-    const hybrid_ollama_model = document.getElementById('settings-hybrid-ollama-model')?.value || 'mistral';
-    const h_groq_key = document.getElementById('settings-hybrid-groq-key')?.value || '';
-    const hybrid_groq_model = document.getElementById('settings-hybrid-groq-model')?.value || 'llama-3.3-70b-versatile';
-
-    // Resolve canonical keys — prefer the active-provider's specific field,
-    // then fall back to the other field, so whichever one the user filled wins.
-    const final_groq_key = (provider === 'hybrid'
-        ? (h_groq_key || groq_api_key)
-        : (groq_api_key || h_groq_key)) || '';
-    const final_ollama_key = (provider === 'hybrid'
-        ? (h_ollama_key || ollama_api_key)
-        : (ollama_api_key || h_ollama_key)) || '';
-    const final_ollama_url = (provider === 'hybrid'
-        ? (h_ollama_url || ollama_cloud_url)
-        : (ollama_cloud_url || h_ollama_url)) || 'https://api.ollama.com/api/generate';
+    const nvidia_api_key = document.getElementById('settings-nvidia-key')?.value || '';
+    const nvidia_model = document.getElementById('settings-nvidia-model')?.value || 'nvidia/llama-3.3-70b-instruct';
 
     // Save non-sensitive settings to localStorage (API keys are NEVER stored locally)
     const settings = {
         model, temperature, num_predict, system_prompt, stream_mode: isStreamMode,
-        provider, groq_model, ollama_cloud_url: final_ollama_url,
-        hybrid_ollama_model, hybrid_groq_model
+        provider, groq_model, nvidia_model
     };
     localStorage.setItem('nova_settings', JSON.stringify(settings));
 
@@ -1657,9 +1721,8 @@ async function saveSettings() {
             body: JSON.stringify({
                 model, temperature, top_p: parseFloat(document.getElementById('settings-top-p')?.value || '0.9'),
                 num_predict, system_prompt, provider,
-                groq_api_key: final_groq_key, groq_model,
-                ollama_api_key: final_ollama_key, ollama_cloud_url: final_ollama_url,
-                hybrid_ollama_model, hybrid_groq_model,
+                groq_api_key, groq_model,
+                nvidia_api_key, nvidia_model,
             }),
         });
         if (resp.ok) {
@@ -1672,15 +1735,10 @@ async function saveSettings() {
         }
     } catch { backendWarning = 'Backend unreachable — settings saved locally only'; }
 
-    const activeModel = provider === 'groq' ? groq_model
-        : provider === 'hybrid' ? `${hybrid_ollama_model} / ${hybrid_groq_model}`
-            : model;
+    const activeModel = provider === 'nvidia' ? nvidia_model : groq_model;
     updateModelBadge(activeModel);
     closeSettings();
-    const providerLabel = provider === 'groq' ? '☁️ Groq'
-        : provider === 'hybrid' ? '🔀 Hybrid'
-            : provider === 'ollama_cloud' ? '🌐 Ollama Cloud'
-                : '🖥️ Ollama';
+    const providerLabel = provider === 'nvidia' ? '🧠 NVIDIA' : provider === 'balanced' ? '⚖️ Balanced' : '⚡ Groq';
     showToast(`Settings saved! Provider: ${providerLabel} ✓`, 'success');
     if (backendWarning) {
         setTimeout(() => showToast(backendWarning, 'warning'), 500);
@@ -1695,7 +1753,8 @@ async function resetSettings() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: DEFAULT_SETTINGS.model,
+                groq_model: DEFAULT_SETTINGS.groq_model,
+                nvidia_model: DEFAULT_SETTINGS.nvidia_model,
                 temperature: DEFAULT_SETTINGS.temperature,
                 num_predict: DEFAULT_SETTINGS.num_predict,
                 system_prompt: '',
@@ -1777,67 +1836,57 @@ async function loadPersonality() {
 async function applySavedSettings() {
     let saved = JSON.parse(localStorage.getItem('nova_settings') || '{}');
 
-    // ── Fetch live_mode and backend settings ─────────────────────────────────
+    // ── Fetch live_mode and backend settings
     try {
         const r = await fetch('/settings');
         if (r.ok) {
             const backendSettings = await r.json();
             novaLiveMode = backendSettings.live_mode === true;
-            const ollamaLocalBtn = document.getElementById('provider-ollama');
-            if (ollamaLocalBtn) {
-                ollamaLocalBtn.style.display = novaLiveMode ? 'none' : '';
-            }
-            // Fix #4: If localStorage is empty, seed from backend (single source of truth)
-            if (!saved.model && !saved.temperature && !saved.provider) {
+            // Fix #4: If localStorage is empty, seed from backend
+            // Fix: If localStorage is empty, seed from backend
+            if (!saved.groq_model && !saved.temperature && !saved.provider) {
                 saved = {
-                    model: backendSettings.model || DEFAULT_SETTINGS.model,
                     temperature: backendSettings.temperature || DEFAULT_SETTINGS.temperature,
                     top_p: backendSettings.top_p || DEFAULT_SETTINGS.top_p,
                     num_predict: backendSettings.num_predict || DEFAULT_SETTINGS.num_predict,
                     system_prompt: backendSettings.system_prompt || '',
                     provider: backendSettings.provider || DEFAULT_SETTINGS.provider,
-                    groq_model: backendSettings.groq_model || 'llama-3.3-70b-versatile',
-                    ollama_cloud_url: backendSettings.ollama_cloud_url || 'https://api.ollama.com/api/generate',
-                    hybrid_ollama_model: backendSettings.hybrid_ollama_model || 'mistral',
-                    hybrid_groq_model: backendSettings.hybrid_groq_model || 'llama-3.3-70b-versatile',
+                    groq_model: backendSettings.groq_model || DEFAULT_SETTINGS.groq_model,
+                    nvidia_model: backendSettings.nvidia_model || DEFAULT_SETTINGS.nvidia_model,
                     stream_mode: true,
                 };
                 localStorage.setItem('nova_settings', JSON.stringify(saved));
                 console.info('[NOVA] Seeded localStorage from backend settings');
             }
-            // If localStorage has ollama (local) provider but we're in live mode, upgrade
-            if (novaLiveMode && saved.provider === 'ollama') {
-                saved.provider = 'hybrid';
+            // Migrate legacy provider names to V2 (keep 'balanced' as valid)
+            if (saved.provider && saved.provider !== 'groq' && saved.provider !== 'nvidia' && saved.provider !== 'balanced') {
+                saved.provider = 'groq';
                 localStorage.setItem('nova_settings', JSON.stringify(saved));
-                console.info('[NOVA] Live mode: upgraded local ollama provider to hybrid');
+                console.info('[NOVA] V2: migrated legacy provider to groq');
             }
         }
     } catch { }
 
-    if (!saved.model && !saved.temperature && !saved.provider) return;
+    if (!saved.groq_model && !saved.temperature && !saved.provider) return;
     isStreamMode = saved.stream_mode !== false;
-    currentProvider = saved.provider || 'hybrid';
+    currentProvider = saved.provider || 'groq';
     try {
         await fetch('/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: saved.model || DEFAULT_SETTINGS.model,
                 temperature: saved.temperature || DEFAULT_SETTINGS.temperature,
                 top_p: saved.top_p || DEFAULT_SETTINGS.top_p,
                 num_predict: saved.num_predict || DEFAULT_SETTINGS.num_predict,
                 system_prompt: saved.system_prompt || '',
                 provider: saved.provider || DEFAULT_SETTINGS.provider,
-                groq_model: saved.groq_model || 'llama-3.3-70b-versatile',
-                ollama_cloud_url: saved.ollama_cloud_url || 'https://api.ollama.com/api/generate',
-                hybrid_ollama_model: saved.hybrid_ollama_model || 'mistral',
-                hybrid_groq_model: saved.hybrid_groq_model || 'llama-3.3-70b-versatile',
+                groq_model: saved.groq_model || DEFAULT_SETTINGS.groq_model,
+                nvidia_model: saved.nvidia_model || DEFAULT_SETTINGS.nvidia_model,
             }),
         });
-        let activeModel;
-        if (currentProvider === 'groq') activeModel = saved.groq_model || 'llama-3.3-70b-versatile';
-        else if (currentProvider === 'hybrid') activeModel = `${saved.hybrid_ollama_model || 'mistral'} / ${saved.hybrid_groq_model || 'llama-3.3-70b-versatile'}`;
-        else activeModel = saved.model || DEFAULT_SETTINGS.model;
+        const activeModel = currentProvider === 'nvidia'
+            ? (saved.nvidia_model || 'nvidia/llama-3.3-70b-instruct')
+            : (saved.groq_model || 'llama-3.3-70b-versatile');
         updateModelBadge(activeModel);
     } catch { }
 }

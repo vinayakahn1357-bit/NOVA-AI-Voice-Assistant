@@ -599,11 +599,30 @@ class ChatController:
 
         def generate():
             full_reply = []
-            active_model = get_settings()["model"]
+            _s = get_settings()
+            provider = _s.get("provider", "groq")
 
-            for chunk in self._ai.generate_stream(
-                history, augmented_message, personality=personality
-            ):
+            # ── Mode dispatch ─────────────────────────────────────────
+            # fast      → Groq only  (provider == 'groq', router may still pick nvidia for complex)
+            # balanced  → Hybrid     (Groq-first, NVIDIA escalation when needed)
+            # powerful  → NVIDIA     (provider == 'nvidia', forced)
+            use_hybrid = (provider == "balanced")
+
+            active_model = (
+                _s["nvidia_model"] if provider == "nvidia"
+                else _s["groq_model"]
+            )
+
+            if use_hybrid:
+                stream_gen = self._ai.generate_stream_hybrid(
+                    history, augmented_message, personality=personality
+                )
+            else:
+                stream_gen = self._ai.generate_stream(
+                    history, augmented_message, personality=personality
+                )
+
+            for chunk in stream_gen:
                 yield chunk
                 try:
                     if chunk.startswith("data: "):
@@ -735,8 +754,12 @@ class ChatController:
                 history = self._session.get_history(session_id, user_id=user_id)
                 if history:
                     settings = get_settings()
+                    active_model = (
+                        settings["nvidia_model"] if settings.get("provider") == "nvidia"
+                        else settings["groq_model"]
+                    )
                     self._memory.generate_daily_summary(
-                        history, settings["model"], build_provider_config(),
+                        history, active_model, build_provider_config(),
                         user_id=user_id,
                     )
             self._session.clear_session(session_id, user_id=user_id)
