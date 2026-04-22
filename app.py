@@ -112,6 +112,7 @@ from services.tool_executor import ToolExecutor
 from utils.response_formatter import ResponseFormatter
 from utils.response_sanitizer import ResponseSanitizer
 from services.response_pipeline import ResponsePipeline
+from services.personality_enforcer import PersonalityEnforcer
 from controllers.chat_controller import ChatController
 
 # Wire services together (Phase V2: Groq + NVIDIA dual-provider)
@@ -132,9 +133,12 @@ ai_service          = AIService(
     model_router, performance_tracker,
 )
 command_service     = CommandService(session_service, memory_service)
+# Phase 12: Personality Enforcer (post-processing enforcement engine)
+personality_enforcer = PersonalityEnforcer()
 response_pipeline   = ResponsePipeline(
     ai_service, query_analyzer, agent_engine,
     response_formatter, response_sanitizer, cache_service,
+    personality_enforcer=personality_enforcer,
 )
 
 # ─── Phase 7: Autonomous Agent & Workflow Engine ──────────────────────────────
@@ -147,7 +151,7 @@ workflow_engine  = WorkflowEngine(ai_service, tool_executor)
 # Reduce agent steps on Vercel to avoid 60s timeout
 if IS_VERCEL:
     import services.agent_runner as _ar
-    _ar.DEFAULT_MAX_STEPS = 3
+    _ar.DEFAULT_MAX_STEPS = 3  # type: ignore[attr-defined]
     log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=3, Vercel-limited)")
 else:
     log.info("Phase 7 — AgentRunner: ACTIVE (max_steps=%d)", 7)
@@ -219,12 +223,12 @@ app = Flask(
     static_folder=os.path.join(FRONTEND_DIR, "static"),
     static_url_path="/static",
 )
-app.json.sort_keys = False
+app.json.sort_keys = False  # type: ignore[attr-defined]
 app.secret_key = FLASK_SECRET_KEY
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = SESSION_LIFETIME_SECONDS
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024   # 50MB — prevents memory exhaustion DoS
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB — matches PDF_MAX_FILE_SIZE_LOCAL
 
 if NOVA_LIVE_MODE:
     app.config["SESSION_COOKIE_SECURE"] = True
@@ -320,8 +324,13 @@ log.info("  Multi-Doc:    max %d per session", __import__('config').PDF_MAX_DOCU
 log.info("  Retriever:    TF-IDF (scikit-learn)")
 log.info("  Exam Mode:    %s", 'enabled' if __import__('config').ENABLE_EXAM_MODE else 'disabled')
 log.info("  Smart Resp:   ACTIVE (citations + suggestions)")
+log.info("Phase 12 Personality Engine:")
+log.info("  Personalities: %d defined", len(__import__('services.personality_service', fromlist=['PERSONALITIES']).PERSONALITIES))
+log.info("  Enforcer:     ACTIVE (forbidden phrases + structure + scoring)")
+log.info("  Regen:        ACTIVE (score threshold=0.5, fallback threshold=0.3)")
+log.info("  Romantic:     SAFE MODE (hard safety gate enabled)")
 log.info("═══════════════════════════════════════════════════════")
-log.info("All blueprints registered. NOVA v5 (Phase 11) ready.")
+log.info("All blueprints registered. NOVA v5 (Phase 12) ready.")
 
 # ─── Vercel Serverless Handler ────────────────────────────────────────────────
 handler = app
@@ -353,7 +362,7 @@ if __name__ == "__main__":
         print(f"  [NOVA v5] WorkflowEngine: ACTIVE")
         print(f"  [NOVA v5] Capabilities: {len(tool_executor.list_capabilities())}")
         print(f"  [NOVA v5] Plugins: {len(plugin_manager.list_plugins())} loaded")
-        print(f"  [NOVA v5] GPU: {'Yes -- ' + GPU_INFO['name'] if GPU_INFO else 'None (CPU-only)'}")
+        print(f"  [NOVA v5] GPU: {'Yes -- ' + str(GPU_INFO['name']) if GPU_INFO else 'None (CPU-only)'}")
         serve(
             app,
             host=host,

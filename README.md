@@ -1,15 +1,15 @@
 # 🌌 NOVA — AI Voice Assistant
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-novaarcai.com-blue?style=for-the-badge&logo=vercel)](https://novaarcai.com)
-[![Deployed on Railway](https://img.shields.io/badge/Deployed%20on-Railway-purple?style=flat&logo=railway)](https://railway.app)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-blue?style=for-the-badge&logo=vercel)](https://nova-ai-ashen-beta.vercel.app/)
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=flat&logo=vercel)](https://nova-ai-ashen-beta.vercel.app/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue?style=flat&logo=python)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0+-green?style=flat&logo=flask)](https://flask.palletsprojects.com/)
 
 > **A production-grade AI assistant with dual-provider intelligence, JWT authentication, Redis infrastructure, persistent memory, neural TTS, PDF analysis, and a premium futuristic UI.**
 
-🔗 **Live at [novaarcai.com](https://novaarcai.com)**
+🔗 **Live at [nova-ai-ashen-beta.vercel.app](https://nova-ai-ashen-beta.vercel.app/)**
 
-NOVA is a full-stack AI assistant with a Python/Flask backend and a browser-based frontend. It supports **dual AI providers** (Groq + NVIDIA), features **JWT + session hybrid authentication**, **Redis-backed caching and rate limiting**, a **persistent SQLite memory engine**, an **agent intelligence system** with workflow orchestration, **PDF document analysis**, and a **6-stage response pipeline**. Deployed on **Railway** in production and runs on **Waitress WSGI** locally.
+NOVA is a full-stack AI assistant with a Python/Flask backend and a browser-based frontend. It supports **dual AI providers** (Groq + NVIDIA), features **JWT + session hybrid authentication**, **Redis-backed caching and rate limiting**, a **persistent SQLite memory engine**, an **agent intelligence system** with workflow orchestration, **PDF document analysis**, and a **6-stage response pipeline**. Deployed on **Vercel** in production and runs on **Waitress WSGI** locally.
 
 ---
 
@@ -440,24 +440,28 @@ After each turn, the LLM extracts facts/interests/preferences in the background 
 
 ## 🌐 Deployment
 
-### Railway (Production) — Live at [novaarcai.com](https://novaarcai.com)
+### Vercel (Production) — Live at [nova-ai-ashen-beta.vercel.app](https://nova-ai-ashen-beta.vercel.app/)
 
-NOVA is **currently deployed and running** on Railway.
+NOVA is **currently deployed and running** on Vercel.
 
 ```bash
-# Railway auto-deploys from GitHub
-# Configure environment variables in Railway dashboard
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel --prod
 ```
 
-**Production configuration**:
-- Runtime: Python 3.10+ (Nixpacks)
-- WSGI: Waitress with auto-tuned thread count
-- Redis: Railway Redis addon (auto-provisions `REDIS_URL`)
-- JWT: Set `JWT_SECRET_KEY` in Railway environment
+**Production configuration** (`vercel.json`):
+- Runtime: `@vercel/python` (serverless)
+- Max duration: 60 seconds
+- SSE streaming: enabled (`X-Accel-Buffering: no`)
+- Static assets: 1-year immutable cache
+- JWT: Set `JWT_SECRET_KEY` in Vercel environment
 
 **Production environment**:
 - Provider auto-selects **Groq** or **NVIDIA** based on available keys
-- Redis provides distributed caching and rate limiting
+- User files stored in `/tmp` (Vercel writable directory)
 - Secure cookies enforced, JWT for API clients
 - SQLite WAL mode for concurrent read/write
 

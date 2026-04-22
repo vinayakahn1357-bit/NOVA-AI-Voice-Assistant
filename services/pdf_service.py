@@ -1,7 +1,7 @@
 """
 services/pdf_service.py — PDF Upload & Processing Service for NOVA (Phase 11)
 Extracts text from PDFs with page tracking, chunks with overlap,
-supports 50MB files, fallback parsing, and processing status callbacks.
+supports 100MB files, fallback parsing, and processing status callbacks.
 """
 
 import hashlib
@@ -26,7 +26,7 @@ _extraction_cache: dict[str, dict] = {}
 class PDFService:
     """
     PDF text extraction, page-aware chunking, and summarization.
-    Phase 11: 50MB support, fallback parser, page citations, processing status.
+    Phase 11: 100MB support, fallback parser, page citations, processing status.
     """
 
     # ── Validation ────────────────────────────────────────────────────────

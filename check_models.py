@@ -89,6 +89,8 @@ def test_model(provider, model, url, key):
 
 
 # ── GROQ ──────────────────────────────────────────────────────────────────────
+groq_results: dict[str, bool] = {}
+nvidia_results: dict[str, bool] = {}
 print(f"\n{BOLD}=== Groq Models ==={RESET}")
 if not GROQ_KEY:
     print(f"  {YELLOW}SKIP — no Groq API key configured{RESET}")

@@ -65,7 +65,7 @@ class CommandService:
         # Unknown command — treat as conversation
         return {"type": "conversation", "command": None, "args": stripped}
 
-    def execute(self, command: str, args: str, session_id: str = None) -> dict:
+    def execute(self, command: str, args: str, session_id: str | None = None) -> dict:
         """
         Execute a command and return structured output.
         Returns: {"response": str, "action": str|None, "data": dict|None}

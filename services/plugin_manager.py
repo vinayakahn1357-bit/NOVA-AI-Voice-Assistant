@@ -104,7 +104,7 @@ class PluginManager:
     Phase 7: supports categories, metadata, and filtering.
     """
 
-    def __init__(self, plugins_dir: str = None):
+    def __init__(self, plugins_dir: str | None = None):
         self._plugins: dict[str, PluginInterface] = {}
         self._plugins_dir = plugins_dir
 

@@ -11,6 +11,26 @@ if (!novaSessionId) {
 
 // ─── View Navigation (unified) ─────────────────────────────────────────────────
 function showView(viewName) {
+    // Get the previous view before switching
+    const prevView = document.querySelector('.app-view.view-active');
+    const prevViewId = prevView ? prevView.id.replace('view-', '') : '';
+
+    // If leaving chat view, clear PDF/document context (page-scoped data)
+    if (prevViewId === 'chat' && viewName !== 'chat') {
+        clearPdfFile();           // Clear any pending PDF attachment
+        hideActiveDocBar();       // Hide the active document indicator
+        // Clear server-side document context so it doesn't leak into other pages
+        fetch('/document/clear', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': novaSessionId
+            },
+            body: JSON.stringify({ session_id: novaSessionId })
+        }).catch(() => { });
+        console.log('[NOVA] Navigated away from chat — PDF context cleared');
+    }
+
     // Hide all views
     document.querySelectorAll('.app-view').forEach(v => {
         v.classList.remove('view-active');
@@ -359,8 +379,8 @@ function handlePdfSelect(input) {
         input.value = '';
         return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('File too large (max 5MB)', 'error');
+    if (file.size > 100 * 1024 * 1024) {
+        showToast('File too large (max 100MB)', 'error');
         input.value = '';
         return;
     }
@@ -420,23 +440,7 @@ async function clearActiveDocument() {
     }
 }
 
-async function checkDocumentStatus() {
-    try {
-        const res = await fetch('/document/status', {
-            headers: { 'X-Session-Id': novaSessionId }
-        });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.has_document && data.filename) {
-                showActiveDocBar(data.filename);
-            } else {
-                hideActiveDocBar();
-            }
-        }
-    } catch (err) {
-        console.log('[NOVA] Document status check failed (server may be offline)');
-    }
-}
+// checkDocumentStatus removed — ChatGPT-style: no persistent doc indicator
 
 // ─── Send Message (Text Mode — Streaming) ────────────────────────────────────
 async function sendMessage() {
@@ -477,10 +481,8 @@ async function sendMessage() {
         appendErrorBubble(chatBox, err.message);
     } finally {
         setSendState(false);
-        // If a PDF was uploaded, show the active doc indicator
-        if (pendingPdfFile) {
-            showActiveDocBar(pendingPdfFile.name);
-        }
+        // Auto-clear the PDF from upload area after result is delivered
+        // PDF data stays in server-side context for follow-up questions on same page
         clearPdfFile();
         chatBox.scrollTop = chatBox.scrollHeight;
         inputField.focus();
@@ -597,13 +599,8 @@ async function sendFull(message, typingDiv, chatBox) {
         console.log('[NOVA sendFull] Response data:', JSON.stringify(data).slice(0, 300));
         replyText = data.reply || replyText;
         updateModelBadge(data.model);
-        // Phase 8: Handle document context signals
-        if (data.meta && data.meta.mode === 'document_clear') {
-            hideActiveDocBar();
-        }
-        if (data.meta && data.meta.active_document) {
-            showActiveDocBar(data.meta.active_document);
-        }
+        // PDF document context is handled server-side for follow-up questions
+        // No persistent UI indicator (ChatGPT-style)
     } else {
         let errBody = '';
         try {
@@ -798,6 +795,17 @@ const VOICE_PRESETS = {
         pitch: 1.22,
         volume: 1.0,
         preview: "Oh my goodness, of course! I'll do my very best to help you, I promise!"
+    },
+    madara: {
+        name: 'Madara',
+        emoji: '⚡',
+        // Madara — deep, commanding, slow and authoritative (Uchiha energy)
+        rate: 0.80,
+        pitch: 0.72,
+        volume: 1.0,
+        // Path to the actual Madara voice recording (served as a static file)
+        mp3Preview: '/static/voices/madara.mp3',
+        preview: "Power is not given. It is taken. Those without power have no right to speak."
     }
 };
 
@@ -874,9 +882,15 @@ function applyVoicePreset(utterance, presetKey) {
 // ── Neural TTS via edge-tts backend ──────────────────────────────────────────
 // Map voice presets → Edge TTS voice names
 const EDGE_VOICE_MAP = {
-    nova: 'en-IN-NeerjaExpressiveNeural', // Natural Indian English female
-    anya: 'en-US-AnaNeural',              // Child-like voice (closest to Anya)
+    nova:    'en-IN-NeerjaExpressiveNeural', // Natural Indian English female
+    anya:    'en-US-AnaNeural',              // Child-like voice (closest to Anya)
     mitsuri: 'en-IN-NeerjaNeural',           // Softer Indian English female
+    madara:  'en-US-ChristopherNeural',      // Deep authoritative male (closest to Madara)
+};
+
+// Extra Edge TTS parameters per preset (rate/pitch sent to backend)
+const EDGE_TTS_PARAMS = {
+    madara: { rate: '-15%', pitch: '-3Hz' },  // Slower + deeper for Madara dominance
 };
 
 // Active HTML5 Audio element (so we can stop/volume-control it)
@@ -1001,11 +1015,12 @@ async function _fetchTTSBuffer(item, text) {
     const plainText = stripForSpeech(text);
     if (!plainText || plainText.length < 3) { item.ready = true; return; }
     const voiceName = EDGE_VOICE_MAP[currentVoicePreset] || EDGE_VOICE_MAP.nova;
+    const extraParams = EDGE_TTS_PARAMS[currentVoicePreset] || {};
     try {
         const resp = await fetch('/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: plainText, voice: voiceName }),
+            body: JSON.stringify({ text: plainText, voice: voiceName, ...extraParams }),
         });
         if (!resp.ok) { item.ready = true; return; }  // mark ready to unblock queue
         const arrayBuf = await resp.arrayBuffer();
@@ -1300,6 +1315,17 @@ function selectVoicePreset(key) {
 function previewVoicePreset() {
     const preset = VOICE_PRESETS[currentVoicePreset] || VOICE_PRESETS.nova;
     stopSpeaking();
+
+    // ── Madara: play actual recorded MP3 as preview ──────────────────────────
+    if (preset.mp3Preview) {
+        const audio = new Audio(preset.mp3Preview);
+        audio.volume = novaVolume;
+        audio.play().catch(e => console.warn('[NOVA Voice Preview] MP3 play failed:', e));
+        showToast('▶ Playing Madara voice sample…', 'info');
+        return;
+    }
+
+    // ── Other presets: use Web Speech API ────────────────────────────────────
     if (!selectedVoice) selectedVoice = pickBestFemaleVoice();
     const utt = new SpeechSynthesisUtterance(preset.preview);
     applyVoicePreset(utt, currentVoicePreset);
@@ -1783,7 +1809,12 @@ const PERSONALITY_NAMES = {
     teacher: 'Teacher',
     friend: 'Friend',
     expert: 'Expert',
-    coach: 'Coach'
+    coach: 'Coach',
+    genius: 'Genius',
+    funny: 'Funny',
+    hacker: 'Hacker',
+    calm: 'Calm',
+    romantic: 'Romantic'
 };
 
 async function setPersonality(mode) {
@@ -3170,7 +3201,7 @@ async function novaLogout() {
 // Load user info and check document status when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     novaLoadUser();
-    checkDocumentStatus();  // Phase 8: restore active document indicator
+    // Document status check removed — ChatGPT-style, no persistent doc bar
 });
 
 // ─── Profile Dropdown Toggle ─────────────────────────────────────────────────

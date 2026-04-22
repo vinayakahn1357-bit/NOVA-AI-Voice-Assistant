@@ -29,10 +29,23 @@ def get_current_settings(role="user"):
     Return settings filtered by role.
     Admin: full config with presence flags for keys (never actual keys)
     User: safe subset only
+    Phase 12: Also exposes personalities list and temperature override info.
     """
     settings = get_settings()
-
     log.info("Settings GET: role=%s", role)
+
+    # Phase 12: Load personality metadata (safe import)
+    personalities_list = {}
+    try:
+        from services.personality_service import PersonalityStore
+        personalities_list = PersonalityStore.list_all()
+    except Exception:
+        pass
+
+    personality_note = (
+        "Temperature is overridden per-personality when a personality mode is active. "
+        "Global temperature applies only in Default mode."
+    )
 
     if role == "admin":
         return {
@@ -52,6 +65,9 @@ def get_current_settings(role="user"):
             # System
             "live_mode":            NOVA_LIVE_MODE,
             "role":                 "admin",
+            # Phase 12: Personality Engine
+            "personalities":        personalities_list,
+            "personality_note":     personality_note,
         }
 
     # Normal user: NO API keys, NO URLs, NO provider internals
@@ -64,6 +80,9 @@ def get_current_settings(role="user"):
         "nvidia_model":         settings["nvidia_model"],
         "live_mode":            NOVA_LIVE_MODE,
         "role":                 "user",
+        # Phase 12: Personality Engine
+        "personalities":        personalities_list,
+        "personality_note":     personality_note,
     }
 
 

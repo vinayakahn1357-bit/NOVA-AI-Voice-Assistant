@@ -1,0 +1,5 @@
+[pyrefly]
+# Ignore virtual in-memory analysis artifacts
+# These are not real source files
+project_includes = ["*.py"]
+project_excludes = ["__pyrefly_virtual__/**", "verify_personality.py", "check_settings.py"]

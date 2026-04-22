@@ -100,7 +100,7 @@ def system_status():
         "cpu": psutil.cpu_percent(interval=0),
         "cpu_cores_logical":  _CPU_CORES_LOGICAL,
         "cpu_cores_physical": _CPU_CORES_PHYSICAL,
-        "cpu_threads_per_core": _CPU_CORES_LOGICAL // max(1, _CPU_CORES_PHYSICAL),
+        "cpu_threads_per_core": (_CPU_CORES_LOGICAL or 4) // max(1, _CPU_CORES_PHYSICAL or 1),
         "memory": mem.percent,
         "memory_used_gb": round(mem.used / (1024 ** 3), 2),
         "memory_total_gb": round(mem.total / (1024 ** 3), 2),
@@ -121,7 +121,7 @@ def tts():
         rate = data.get("rate", "+0%")
         pitch = data.get("pitch", "+0Hz")
 
-        audio_bytes = TTSService.synthesize(text, voice, rate, pitch)
+        audio_bytes = TTSService.synthesize(text, voice or "", rate, pitch)
 
         return Response(
             audio_bytes,

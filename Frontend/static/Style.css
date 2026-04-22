@@ -4935,22 +4935,13 @@ body {
 }
 
 .voice-preset-grid {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
     margin-bottom: 6px;
-    padding-bottom: 8px; /* for scroll shadow/bar */
-    margin-right: -16px; /* bleed to edge */
-    padding-right: 16px;
-    scrollbar-width: none;
 }
-.voice-preset-grid::-webkit-scrollbar { display: none; }
 
 .voice-preset-card {
-    flex: 0 0 calc(33.333% - 8px);
-    min-width: 115px;
-    scroll-snap-align: start;
     background: rgba(255, 255, 255, 0.025);
     border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 12px;
@@ -4996,6 +4987,50 @@ body {
     border-color: #a8e063;
     background: rgba(168, 224, 99, 0.07);
     box-shadow: 0 0 16px rgba(168, 224, 99, 0.18), inset 0 0 10px rgba(168, 224, 99, 0.04);
+}
+
+/* Madara — deep crimson/dark red (Uchiha dominance) */
+.vp-madara-card {
+    border-color: rgba(200, 30, 30, 0.25);
+    background: linear-gradient(135deg, rgba(40, 5, 5, 0.4), rgba(10, 5, 5, 0.3));
+}
+
+.vp-madara-card:hover {
+    border-color: rgba(220, 50, 50, 0.5) !important;
+    background: rgba(180, 20, 20, 0.12) !important;
+    box-shadow: 0 4px 20px rgba(200, 30, 30, 0.2) !important;
+}
+
+#vp-madara.active {
+    border-color: #c81e1e;
+    background: rgba(200, 30, 30, 0.10);
+    box-shadow: 0 0 20px rgba(200, 30, 30, 0.3), inset 0 0 12px rgba(200, 30, 30, 0.07);
+    animation: madaraPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes madaraPulse {
+    0%, 100% { box-shadow: 0 0 16px rgba(200, 30, 30, 0.3), inset 0 0 10px rgba(200, 30, 30, 0.06); }
+    50%       { box-shadow: 0 0 28px rgba(200, 30, 30, 0.55), inset 0 0 16px rgba(200, 30, 30, 0.12); }
+}
+
+#vp-madara.active .vp-name {
+    color: #e85050;
+    text-shadow: 0 0 10px rgba(200, 30, 30, 0.5);
+}
+
+/* "CUSTOM" badge on the Madara card */
+.vp-badge {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 0.44rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: #e85050;
+    background: rgba(200, 30, 30, 0.15);
+    border: 1px solid rgba(200, 30, 30, 0.35);
+    border-radius: 4px;
+    padding: 1px 5px;
 }
 
 .vp-emoji {

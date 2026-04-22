@@ -211,8 +211,8 @@ class NovaMemory:
                 "facts_count":         len(facts),
                 "interests_count":     len(interests),
                 "top_interests":       [t for t, _ in top_interests],
-                "total_conversations": int(self._get_meta("total_conversations", 0)),
-                "days_active":         int(self._get_meta("days_active", 0)),
+                "total_conversations": int(self._get_meta("total_conversations", 0) or 0),
+                "days_active":         int(self._get_meta("days_active", 0) or 0),
                 "first_seen":          self._get_meta("first_seen"),
                 "daily_summaries":     daily_count,
                 "facts":               facts,
@@ -339,7 +339,7 @@ class NovaMemory:
     def record_conversation(self):
         """Call once per completed conversation turn."""
         with self._lock:
-            total = int(self._get_meta("total_conversations", 0)) + 1
+            total = int(self._get_meta("total_conversations", 0) or 0) + 1
             self._set_meta("total_conversations", total)
 
             today = str(date.today())
@@ -352,7 +352,7 @@ class NovaMemory:
                 "SELECT value FROM meta WHERE key = 'last_active_day'"
             ).fetchone()
             if not seen_today or seen_today[0] != today:
-                days = int(self._get_meta("days_active", 0)) + 1
+                days = int(self._get_meta("days_active", 0) or 0) + 1
                 self._set_meta("days_active", days)
                 self._set_meta("last_active_day", today)
                 # Ensure first_seen is set
@@ -362,7 +362,7 @@ class NovaMemory:
             self._conn.commit()
 
     def extract_and_store(self, user_msg: str, nova_reply: str,
-                          model: str = "mistral", provider_config: dict = None):
+                          model: str = "mistral", provider_config: dict | None = None):
         """
         Run in a background thread after each conversation turn.
         Asks the LLM to extract facts / interests / preferences.
@@ -465,7 +465,7 @@ Rules:
 
     def generate_daily_summary(self, conversation_log: list,
                                 model: str = "mistral",
-                                provider_config: dict = None):
+                                provider_config: dict | None = None):
         """Generate and store a short daily summary from the day's conversation log."""
         if not conversation_log:
             return

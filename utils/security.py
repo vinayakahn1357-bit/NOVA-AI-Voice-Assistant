@@ -22,7 +22,7 @@ log = get_logger("security")
 
 # ─── Password Hashing (PBKDF2-HMAC-SHA256) ────────────────────────────────────
 
-def hash_password(password: str, salt: str = None) -> tuple:
+def hash_password(password: str, salt: str | None = None) -> tuple:
     """Return (hashed_hex, salt) using PBKDF2-HMAC-SHA256 with 260k iterations."""
     if salt is None:
         salt = uuid.uuid4().hex
@@ -75,7 +75,7 @@ def create_jwt(user_id: str, email: str, role: str = "user") -> str | None:
             "iat": int(time.time()),
             "exp": int(time.time()) + (JWT_EXPIRY_HOURS * 3600),
         }
-        return jwt.encode(payload, _jwt_secret, algorithm="HS256")
+        return jwt.encode(payload, _jwt_secret or "", algorithm="HS256")
     except ImportError:
         log.warning("JWT: PyJWT not installed")
         return None
@@ -98,7 +98,7 @@ def verify_jwt(token: str) -> dict | None:
 
     try:
         import jwt
-        payload = jwt.decode(token, _jwt_secret, algorithms=["HS256"])
+        payload = jwt.decode(token, _jwt_secret or "", algorithms=["HS256"])
         return payload
     except ImportError:
         return None
@@ -106,7 +106,7 @@ def verify_jwt(token: str) -> dict | None:
         return None
 
 
-def get_current_user() -> dict:
+def get_current_user() -> dict | None:
     """
     Get the current authenticated user from any auth method.
     Returns: {"user_id": str, "email": str, "role": str} or None if unauthenticated.
@@ -232,7 +232,7 @@ class RateLimiter:
     def is_allowed(self, key: str) -> bool:
         """Return True if the key is within rate limits."""
         # Try Redis first
-        if self._use_redis:
+        if self._use_redis and self._redis:
             redis_key = f"nova:ratelimit:{key}"
             return self._redis.check_rate_limit(
                 redis_key, self.max_requests, self.window
@@ -297,7 +297,7 @@ def _get_allowed_origins():
             vercel_project = os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
             if vercel_project:
                 _ALLOWED_ORIGINS.add(f"https://{vercel_project}")
-    return _ALLOWED_ORIGINS
+    return _ALLOWED_ORIGINS or set()
 
 
 def configure_cors(app):

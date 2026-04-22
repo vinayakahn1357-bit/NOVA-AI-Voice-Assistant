@@ -43,6 +43,7 @@ print(f"   Added doc2: id={doc_id2[:12]}, total={len(docs)}")
 # Test switching
 store.set_active_document("sess1", doc_id)
 active = store.get_active_document("sess1")
+assert active is not None
 assert active["filename"] == "test.pdf"
 print(f"   Switched active to: {active['filename']}")
 
@@ -55,6 +56,7 @@ print(f"   Status: {status['document_count']} docs, active={status['filename']}"
 # Test switch by filename
 store.switch_by_filename("sess1", "test2")
 active2 = store.get_active_document("sess1")
+assert active2 is not None
 assert active2["filename"] == "test2.pdf"
 print(f"   Switched by filename to: {active2['filename']}")
 
@@ -113,6 +115,7 @@ store2 = DocumentContextStore()
 store2.set("sess_legacy", "legacy.pdf", "Old summary", ["chunk1", "chunk2"])
 assert store2.has_document("sess_legacy")
 doc = store2.get("sess_legacy")
+assert doc is not None
 assert doc["filename"] == "legacy.pdf"
 print("   Legacy set/get: OK")
 
@@ -127,7 +130,7 @@ assert err is not None
 assert "Only .pdf" in err
 print("   Wrong extension: OK")
 
-err = PDFService.validate(b"x" * (60 * 1024 * 1024), "big.pdf")
+err = PDFService.validate(b"x" * (110 * 1024 * 1024), "big.pdf")
 assert err is not None
 assert "too large" in err.lower()
 assert "Suggestions" in err

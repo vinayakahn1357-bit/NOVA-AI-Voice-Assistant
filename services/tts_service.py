@@ -18,7 +18,7 @@ class TTSService:
     """Neural text-to-speech via Microsoft Edge TTS."""
 
     @staticmethod
-    def synthesize(text: str, voice: str = None, rate: str = "+0%",
+    def synthesize(text: str, voice: str | None = None, rate: str = "+0%",
                    pitch: str = "+0Hz") -> bytes:
         """
         Generate speech audio from text.

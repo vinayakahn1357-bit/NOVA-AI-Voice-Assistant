@@ -299,8 +299,8 @@ class ChatController:
             }
 
         # ── Agent detection (document-aware) ─────────────────────────
-        has_doc = (self._document_store
-                   and self._document_store.has_document(session_id))
+        has_doc = bool(self._document_store
+                       and self._document_store.has_document(session_id))
         if self._agent_runner:
             if self._should_use_document_agent(user_message, has_doc):
                 return self._handle_agent_chat(
@@ -426,6 +426,7 @@ class ChatController:
         history = self._session.get_history(session_id, user_id=user_id)
 
         try:
+            assert self._agent_runner is not None
             result = self._agent_runner.run(
                 task=user_message,
                 history=history,
@@ -506,7 +507,7 @@ class ChatController:
                 yield f'data: {json.dumps({"done": True, "session_id": session_id, "model": "nova-commands"})}\n\n'
 
             return Response(
-                stream_with_context(_doc_clear_gen()),
+                stream_with_context(_doc_clear_gen()),  # type: ignore[arg-type]
                 mimetype="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -525,7 +526,7 @@ class ChatController:
                 yield f'data: {json.dumps({"done": True, "session_id": session_id, "model": "nova-commands"})}\n\n'
 
             return Response(
-                stream_with_context(_switch_gen()),
+                stream_with_context(_switch_gen()),  # type: ignore[arg-type]
                 mimetype="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -551,7 +552,7 @@ class ChatController:
                 yield f'data: {json.dumps({"done": True, "session_id": session_id, "model": "nova-commands"})}\n\n'
 
             return Response(
-                stream_with_context(_cmd_gen()),
+                stream_with_context(_cmd_gen()),  # type: ignore[arg-type]
                 mimetype="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -561,8 +562,8 @@ class ChatController:
             )
 
         # ── Agent streaming (document-aware) ─────────────────────────
-        has_doc = (self._document_store
-                   and self._document_store.has_document(session_id))
+        has_doc = bool(self._document_store
+                       and self._document_store.has_document(session_id))
         if self._agent_runner:
             if self._should_use_document_agent(user_message, has_doc):
                 return self._handle_agent_stream(
@@ -673,7 +674,7 @@ class ChatController:
                 )
 
         return Response(
-            stream_with_context(generate()),
+            stream_with_context(generate()),  # type: ignore[arg-type]
             mimetype="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -704,6 +705,7 @@ class ChatController:
             final_answer = ""
 
             try:
+                assert self._agent_runner is not None
                 for event in self._agent_runner.run_stream(
                     task=user_message, history=history, user_id=user_id,
                     document_context=doc_context,
@@ -736,7 +738,7 @@ class ChatController:
                 self._memory.record_turn(user_id=user_id)
 
         return Response(
-            stream_with_context(generate()),
+            stream_with_context(generate()),  # type: ignore[arg-type]
             mimetype="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

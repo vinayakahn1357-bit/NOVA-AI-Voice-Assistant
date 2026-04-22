@@ -16,7 +16,7 @@
         href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-    <link rel="stylesheet" href="/static/Style.css?v=20260319">
+    <link rel="stylesheet" href="/static/Style.css?v=20260422b">
     <style>
         /* ─── Auth: User chip in sidebar ─── */
         .gc-user-chip {
@@ -560,13 +560,7 @@
                         <span class="gc-voice-status voice-status">Tap mic to talk to Nova</span>
                     </div>
 
-                    <!-- Active document indicator bar (Phase 8) -->
-                    <div class="gc-active-doc-bar" id="active-doc-bar">
-                        <span class="gc-active-doc-bar-icon">📄</span>
-                        <span class="gc-active-doc-bar-label">Active Document:</span>
-                        <span class="gc-active-doc-bar-name" id="active-doc-name"></span>
-                        <button class="gc-active-doc-bar-clear" onclick="clearActiveDocument()" title="Remove document context">✕ Clear</button>
-                    </div>
+                    <!-- Active document bar removed — ChatGPT-style: no persistent indicator -->
 
                     <!-- PDF file indicator chip -->
                     <div class="gc-file-chip" id="pdf-file-chip">
@@ -1109,10 +1103,38 @@
                                     <div class="pers-name">Coach</div>
                                     <div class="pers-desc">Motivating · Action</div>
                                 </div>
+                                <div class="personality-card" id="pers-genius" onclick="setPersonality('genius')">
+                                    <div class="pers-emoji">🧠</div>
+                                    <div class="pers-name">Genius</div>
+                                    <div class="pers-desc">Witty · Confident</div>
+                                </div>
+                                <div class="personality-card" id="pers-funny" onclick="setPersonality('funny')">
+                                    <div class="pers-emoji">😂</div>
+                                    <div class="pers-name">Funny</div>
+                                    <div class="pers-desc">Playful · Humorous</div>
+                                </div>
+                                <div class="personality-card" id="pers-hacker" onclick="setPersonality('hacker')">
+                                    <div class="pers-emoji">💻</div>
+                                    <div class="pers-name">Hacker</div>
+                                    <div class="pers-desc">Direct · Solution-first</div>
+                                </div>
+                                <div class="personality-card" id="pers-calm" onclick="setPersonality('calm')">
+                                    <div class="pers-emoji">🌿</div>
+                                    <div class="pers-name">Calm</div>
+                                    <div class="pers-desc">Mindful · Peaceful</div>
+                                </div>
+                                <div class="personality-card" id="pers-romantic" onclick="setPersonality('romantic')">
+                                    <div class="pers-emoji">💫</div>
+                                    <div class="pers-name">Romantic</div>
+                                    <div class="pers-desc">Charming · Expressive</div>
+                                </div>
                             </div>
                             <div class="pers-active-row">
                                 <span class="pers-active-label">Active: <strong id="pers-active-name">Default</strong></span>
                             </div>
+                            <p class="settings-hint" style="margin-top:6px; font-size:0.6rem; opacity:0.4;">
+                                ⚡ Personality mode overrides temperature. Global temperature applies only in Default mode.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -1141,6 +1163,12 @@
                                     <div class="vp-emoji">🌺</div>
                                     <div class="vp-name">Mitsuri</div>
                                     <div class="vp-desc">Warm · Bubbly</div>
+                                </div>
+                                <div class="voice-preset-card vp-madara-card" id="vp-madara" onclick="selectVoicePreset('madara')">
+                                    <div class="vp-emoji">⚡</div>
+                                    <div class="vp-name">Madara</div>
+                                    <div class="vp-desc">Deep · Dominant</div>
+                                    <div class="vp-badge">CUSTOM</div>
                                 </div>
                             </div>
                             <div class="vp-preview-row">
@@ -1174,10 +1202,10 @@
     </div>
 
     <!-- Extracted modules (loaded before script.js so globals are available) -->
-    <script src="/static/modules/toast.js?v=20260410"></script>
-    <script src="/static/modules/markdown.js?v=20260410"></script>
-    <script src="/static/modules/chatbubbles.js?v=20260410"></script>
-    <script src="/static/script.js?v=20260410"></script>
+    <script src="/static/modules/toast.js?v=20260422c"></script>
+    <script src="/static/modules/markdown.js?v=20260422c"></script>
+    <script src="/static/modules/chatbubbles.js?v=20260422c"></script>
+    <script src="/static/script.js?v=20260422c"></script>
 </body>
 
 </html>

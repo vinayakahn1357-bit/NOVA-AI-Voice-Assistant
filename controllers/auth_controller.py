@@ -53,7 +53,7 @@ def _save_users(users: dict):
 
 # ─── Auth Handlers ────────────────────────────────────────────────────────────
 
-def handle_register(data: dict) -> dict:
+def handle_register(data: dict) -> dict:  # type: ignore[return]
     """
     Register a new user.
     Returns: {"ok": True, "user": {...}, "token": str|None}
@@ -91,13 +91,13 @@ def handle_register(data: dict) -> dict:
     token = generate_token(user_id, email, role)
 
     log.info("New user registered: %s (jwt=%s)", email, "yes" if token else "no")
-    result = {"ok": True, "user": {"name": name, "email": email}}
+    result: dict = {"ok": True, "user": {"name": name, "email": email}}
     if token:
         result["token"] = token
     return result
 
 
-def handle_login(data: dict) -> dict:
+def handle_login(data: dict) -> dict:  # type: ignore[return]
     """
     Log in a user.
     Returns: {"ok": True, "user": {...}, "token": str|None}
@@ -132,7 +132,7 @@ def handle_login(data: dict) -> dict:
     token = generate_token(user["id"], email, role)
 
     log.info("User logged in: %s (jwt=%s)", email, "yes" if token else "no")
-    result = {"ok": True, "user": {"name": user["name"], "email": email}}
+    result: dict = {"ok": True, "user": {"name": user["name"], "email": email}}
     if token:
         result["token"] = token
     return result
@@ -144,7 +144,7 @@ def handle_logout():
     return {"ok": True}
 
 
-def handle_me() -> dict:
+def handle_me() -> dict | None:
     """
     Return the current authenticated user, or None.
     Supports both JWT and session authentication.

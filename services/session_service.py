@@ -50,7 +50,7 @@ class SessionService:
             return user_id.strip()
         return "default"
 
-    def get_history(self, session_id: str, user_id: str = None) -> list:
+    def get_history(self, session_id: str, user_id: str | None = None) -> list:
         """
         Return the conversation history list for the given session.
         Scoped by user_id to prevent cross-user data access.
@@ -64,7 +64,7 @@ class SessionService:
             ).fetchall()
         return [{"role": r[0], "content": r[1]} for r in rows]
 
-    def _next_turn(self, session_id: str, user_id: str = None) -> int:
+    def _next_turn(self, session_id: str, user_id: str | None = None) -> int:
         """Return the next turn index for a session (scoped by user_id)."""
         uid = self._safe_user_id(user_id)
         row = self._db.execute(
@@ -74,7 +74,7 @@ class SessionService:
         ).fetchone()
         return (row[0] + 1) if row else 0
 
-    def append_message(self, session_id: str, role: str, content: str, user_id: str = None):
+    def append_message(self, session_id: str, role: str, content: str, user_id: str | None = None):
         """Append a single message to the session history (scoped by user_id)."""
         uid = self._safe_user_id(user_id)
         with self._lock:
@@ -92,7 +92,7 @@ class SessionService:
             )
             self._db.commit()
 
-    def clear_session(self, session_id: str, user_id: str = None):
+    def clear_session(self, session_id: str, user_id: str | None = None):
         """Delete all history for a specific session (scoped by user_id)."""
         uid = self._safe_user_id(user_id)
         with self._lock:
@@ -103,7 +103,7 @@ class SessionService:
             self._db.commit()
         log.info("Cleared session: %s (user=%s)", session_id, uid)
 
-    def clear_all_sessions(self, user_id: str = None):
+    def clear_all_sessions(self, user_id: str | None = None):
         """Delete all session history for a specific user."""
         uid = self._safe_user_id(user_id)
         with self._lock:

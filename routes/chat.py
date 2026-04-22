@@ -179,6 +179,7 @@ def chat():
             data = _process_pdf_context(data, file_bytes, filename, session_id)
             pdf_result = data.pop("_pdf_result", None)
 
+        assert _chat_controller is not None
         result = _chat_controller.handle_chat(data, session_id)
 
         # Include PDF processing info if applicable
@@ -215,6 +216,7 @@ def chat_stream():
         if file_bytes and filename:
             data = _process_pdf_context(data, file_bytes, filename, session_id)
 
+        assert _chat_controller is not None
         return _chat_controller.handle_chat_stream(data, session_id)
 
     except NovaValidationError as e:
@@ -235,6 +237,7 @@ def chat_stream():
 def reset_conversation():
     data = request.get_json() or {}
     session_id = data.get("session_id") or request.headers.get("X-Session-Id")
+    assert _chat_controller is not None
     result = _chat_controller.handle_reset(session_id)
     return jsonify(result)
 

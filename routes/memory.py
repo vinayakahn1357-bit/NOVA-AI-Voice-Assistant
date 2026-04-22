@@ -26,12 +26,14 @@ def init_app(memory_service, session_service):
 @memory_bp.route("/memory", methods=["GET"])
 def get_memory():
     """Return all of Nova's learned memory as JSON."""
+    assert _memory_service is not None
     return jsonify(_memory_service.get_stats())
 
 
 @memory_bp.route("/memory/reset", methods=["POST"])
 def reset_memory():
     """Wipe all learned memory."""
+    assert _memory_service is not None
     _memory_service.reset()
     return jsonify({"status": "ok", "message": "Nova's memory has been reset."})
 
@@ -42,6 +44,7 @@ def generate_summary():
     data = request.get_json() or {}
     session_id = data.get("session_id") or request.headers.get("X-Session-Id", "default")
     user_id = session.get("user_id", "default")
+    assert _session_service is not None
     history = _session_service.get_history(session_id, user_id=user_id)
     if history:
         settings = get_settings()
@@ -49,6 +52,7 @@ def generate_summary():
             settings["nvidia_model"] if settings.get("provider") == "nvidia"
             else settings["groq_model"]
         )
+        assert _memory_service is not None
         _memory_service.generate_daily_summary(
             history, active_model, build_provider_config()
         )

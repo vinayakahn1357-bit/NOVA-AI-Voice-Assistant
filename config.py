@@ -146,7 +146,7 @@ ENABLE_PERSONALITY_ML = os.getenv("ENABLE_PERSONALITY_ML", "true").lower() in ("
 PERSONALITY_ML_CONFIDENCE = float(os.getenv("PERSONALITY_ML_CONFIDENCE", "0.6"))
 
 # ─── Phase 11: PDF Intelligence & Document-Aware Assistant ─────────────────────
-PDF_MAX_FILE_SIZE_LOCAL = int(os.getenv("PDF_MAX_FILE_SIZE", str(50 * 1024 * 1024)))  # 50MB local
+PDF_MAX_FILE_SIZE_LOCAL = int(os.getenv("PDF_MAX_FILE_SIZE", str(100 * 1024 * 1024)))  # 100MB local
 PDF_MAX_FILE_SIZE_VERCEL = 10 * 1024 * 1024                                            # 10MB serverless
 PDF_MAX_FILE_SIZE = PDF_MAX_FILE_SIZE_VERCEL if IS_VERCEL else PDF_MAX_FILE_SIZE_LOCAL
 PDF_MAX_DOCUMENTS_PER_SESSION = int(os.getenv("PDF_MAX_DOCUMENTS", "3"))

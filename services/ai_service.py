@@ -2,7 +2,7 @@
 services/ai_service.py - LLM Provider Dispatch for NOVA V2
 Handles all communication with AI providers: Groq (fast default) and NVIDIA (advanced reasoning).
 Includes intelligent routing, performance tracking, retry logic, response caching,
-adaptive intelligence, and latency logging.
+adaptive intelligence, latency logging, and per-personality temperature routing (Phase 12).
 """
 
 import json
@@ -52,35 +52,54 @@ class AIService:
         _adapter = HTTPAdapter(
             pool_connections=10,   # number of hosts to keep connections for
             pool_maxsize=20,       # max connections per host
-            max_retries=Retry(
+            max_retries=Retry(  # type: ignore[arg-type]
                 total=0,           # retries handled by our own retry_handler
                 raise_on_status=False,
             ),
         )
-        self._http.mount("https://", _adapter)
-        self._http.mount("http://", _adapter)
+        self._http.mount("https://", _adapter)  # type: ignore[arg-type]
+        self._http.mount("http://", _adapter)  # type: ignore[arg-type]
         log.info("HTTP session pool initialized (pool_connections=10, pool_maxsize=20)")
 
     # --- Provider Checks ---
 
     @staticmethod
     def _groq_configured():
-        return bool(get_settings().get("groq_api_key", "").strip())
+        return bool(str(get_settings().get("groq_api_key", "")).strip())
 
     @staticmethod
     def _nvidia_configured():
-        return bool(get_settings().get("nvidia_api_key", "").strip())
+        return bool(str(get_settings().get("nvidia_api_key", "")).strip())
 
+
+    @staticmethod
+    def _resolve_temperature(personality: str = "default") -> float:
+        """
+        Phase 12: Return the per-personality temperature.
+        Falls back to global settings temperature for 'default' or unknown keys.
+        Per-personality temperatures are fixed and override the global setting.
+        """
+        try:
+            from services.personality_service import get_personality_temperature, VALID_PERSONALITIES
+            if personality and personality in VALID_PERSONALITIES:
+                temp = get_personality_temperature(personality)
+                log.debug("Temperature override: personality=%s temp=%.2f", personality, temp)
+                return temp
+        except ImportError:
+            pass
+        # Fallback to global setting
+        return float(get_settings().get("temperature", 0.7))
 
     @with_retry(label="groq")
-    def _call_groq(self, messages, stream=False, model_override=""):
-        """Call Groq API with retry logic."""
+    def _call_groq(self, messages, stream=False, model_override="", temperature=None):
+        """Call Groq API with retry logic. Accepts optional temperature override."""
         settings = get_settings()
         groq_model = model_override or settings["groq_model"] or "llama-3.3-70b-versatile"
+        effective_temp = temperature if temperature is not None else settings["temperature"]
         payload = {
             "model": groq_model,
             "messages": messages,
-            "temperature": settings["temperature"],
+            "temperature": effective_temp,
             "max_tokens": settings["num_predict"],
             "top_p": settings["top_p"],
             "stream": stream,
@@ -93,14 +112,15 @@ class AIService:
                                stream=stream, timeout=API_TIMEOUT)
 
     @with_retry(label="nvidia")
-    def _call_nvidia(self, messages, stream=False, model_override=""):
-        """Call NVIDIA API (OpenAI-compatible format) with retry logic."""
+    def _call_nvidia(self, messages, stream=False, model_override="", temperature=None):
+        """Call NVIDIA API (OpenAI-compatible format) with retry logic. Accepts optional temperature override."""
         settings = get_settings()
         nvidia_model = model_override or settings["nvidia_model"] or "nvidia/llama-3.3-70b-instruct"
+        effective_temp = temperature if temperature is not None else settings["temperature"]
         payload = {
             "model": nvidia_model,
             "messages": messages,
-            "temperature": settings["temperature"],
+            "temperature": effective_temp,
             "max_tokens": settings["num_predict"],
             "top_p": settings["top_p"],
             "stream": stream,
@@ -206,11 +226,15 @@ class AIService:
         active_model = settings["groq_model"]
         call_t0 = time.time()
 
+        # Phase 12: Resolve per-personality temperature
+        personality_temp = self._resolve_temperature(personality)
+        log.debug("generate: personality=%s temperature=%.2f", personality, personality_temp)
+
         try:
             if provider == "nvidia" and self._nvidia_configured():
-                ai_response, active_model = self._generate_nvidia(chat_messages, qa)
+                ai_response, active_model = self._generate_nvidia(chat_messages, qa, temperature=personality_temp)
             elif provider == "groq" and self._groq_configured():
-                ai_response, active_model = self._generate_groq(chat_messages, qa)
+                ai_response, active_model = self._generate_groq(chat_messages, qa, temperature=personality_temp)
             else:
                 log.warning("No AI provider keys configured for '%s' — returning fallback response", provider)
 
@@ -235,10 +259,10 @@ class AIService:
                     call_t0 = time.time()
                     if alt_provider == "groq":
                         ai_response, active_model = self._generate_groq(
-                            chat_messages, qa)
+                            chat_messages, qa, temperature=personality_temp)
                     else:
                         ai_response, active_model = self._generate_nvidia(
-                            chat_messages, qa)
+                            chat_messages, qa, temperature=personality_temp)
                     provider = alt_provider
                     if self._tracker:
                         self._tracker.record_success(alt_provider, time.time() - call_t0)
@@ -282,10 +306,11 @@ class AIService:
 
     # --- Provider-Specific Generation ---
 
-    def _generate_groq(self, messages, qa=None):
+    def _generate_groq(self, messages, qa=None, temperature=None):
         """Generate via Groq with adaptive params. Returns (text, model)."""
         settings = get_settings()
-        r = self._call_groq(messages, model_override=settings["groq_model"])
+        r = self._call_groq(messages, model_override=settings["groq_model"], temperature=temperature)
+        assert r is not None
         if r.status_code != 200:
             try:
                 err = r.json().get("error", {}).get("message",
@@ -299,10 +324,11 @@ class AIService:
             raise NovaProviderError("Groq response parse error: %s" % exc, code="GROQ_PARSE")
         return text, settings["groq_model"]
 
-    def _generate_nvidia(self, messages, qa=None):
+    def _generate_nvidia(self, messages, qa=None, temperature=None):
         """Generate via NVIDIA with adaptive params. Returns (text, model)."""
         settings = get_settings()
-        r = self._call_nvidia(messages, model_override=settings["nvidia_model"])
+        r = self._call_nvidia(messages, model_override=settings["nvidia_model"], temperature=temperature)
+        assert r is not None
         if r.status_code != 200:
             try:
                 err = r.json().get("error", {}).get("message",
@@ -323,6 +349,7 @@ class AIService:
         """
         Generator yielding SSE-formatted tokens.
         V2: Routes to Groq or NVIDIA streaming based on select_provider().
+        Phase 12: Applies per-personality temperature to streaming calls.
         """
         settings = get_settings()
         chat_messages = self._prompt.build_chat_messages(history, personality)
@@ -330,13 +357,15 @@ class AIService:
         # Analyse query for routing
         qa = self._analyzer.analyze(user_message) if self._analyzer else {}
 
+        # Phase 12: Resolve personality temperature for streaming
+        personality_temp = self._resolve_temperature(personality)
+        log.debug("generate_stream: personality=%s temperature=%.2f", personality, personality_temp)
+
         # Route to provider
         if self._router:
             provider = self._router.select_provider(user_message, qa)
             provider = self._resolve_provider(provider)
         else:
-            # If saved provider is 'balanced', generate_stream_hybrid handles it.
-            # If we land here with balanced (shouldn't), treat as groq.
             raw_provider = settings["provider"]
             provider = self._resolve_provider(raw_provider)
 
@@ -353,9 +382,9 @@ class AIService:
 
         try:
             if use_nvidia:
-                yield from self._stream_nvidia(chat_messages, full_reply)
+                yield from self._stream_nvidia(chat_messages, full_reply, temperature=personality_temp)
             elif use_groq:
-                yield from self._stream_groq(chat_messages, full_reply)
+                yield from self._stream_groq(chat_messages, full_reply, temperature=personality_temp)
             else:
                 yield 'data: %s\n\n' % json.dumps({"error": "No AI provider available."})
                 return
@@ -405,30 +434,30 @@ class AIService:
 
     # --- Streaming Helpers ---
 
-    def _stream_groq(self, messages, full_reply):
-        """Stream from Groq API."""
+    def _stream_groq(self, messages, full_reply, temperature=None):
+        """Stream from Groq API. Accepts optional temperature override."""
         settings = get_settings()
-        log.info("Groq stream: model=%s", settings["groq_model"])
-        with self._call_groq(messages, stream=True) as r:
+        log.info("Groq stream: model=%s temp=%s", settings["groq_model"], temperature)
+        with self._call_groq(messages, stream=True, temperature=temperature) as r:  # type: ignore[union-attr]
             if r.status_code != 200:
                 log.error("Groq stream ERROR: %d", r.status_code)
                 yield 'data: %s\n\n' % json.dumps({"error": "Groq API error (%d)" % r.status_code})
                 return
             yield from self._parse_groq_stream(r, full_reply)
 
-    def _stream_nvidia(self, messages, full_reply):
-        """Stream from NVIDIA API (OpenAI-compatible SSE format)."""
+    def _stream_nvidia(self, messages, full_reply, temperature=None):
+        """Stream from NVIDIA API (OpenAI-compatible SSE format). Accepts optional temperature override."""
         settings = get_settings()
         nvidia_model = settings["nvidia_model"]
-        log.info("NVIDIA stream: model=%s", nvidia_model)
+        log.info("NVIDIA stream: model=%s temp=%s", nvidia_model, temperature)
         try:
-            with self._call_nvidia(messages, stream=True) as r:
+            with self._call_nvidia(messages, stream=True, temperature=temperature) as r:  # type: ignore[union-attr]
                 if r.status_code != 200:
                     log.error("NVIDIA stream ERROR: %d", r.status_code)
                     # Fallback to Groq
                     if self._groq_configured():
                         log.warning("NVIDIA stream failed -> Groq fallback")
-                        yield from self._stream_groq(messages, full_reply)
+                        yield from self._stream_groq(messages, full_reply, temperature=temperature)
                         return
                     yield 'data: %s\n\n' % json.dumps({"error": "NVIDIA API error (%d)" % r.status_code})
                     return
@@ -437,7 +466,7 @@ class AIService:
             log.warning("NVIDIA stream exception: %s, falling back to Groq", exc)
             if self._groq_configured():
                 full_reply.clear()
-                yield from self._stream_groq(messages, full_reply)
+                yield from self._stream_groq(messages, full_reply, temperature=temperature)
             else:
                 yield 'data: %s\n\n' % json.dumps({"error": "NVIDIA stream failed: %s" % str(exc)})
 

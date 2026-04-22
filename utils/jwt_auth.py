@@ -72,9 +72,9 @@ def generate_token(user_id: str, email: str, role: str = "user") -> str | None:
             "email": email,
             "role": role,
             "iat": now,
-            "exp": now + (_jwt_expiry_hours * 3600),
+            "exp": now + ((_jwt_expiry_hours or 168) * 3600),
         }
-        token = jwt.encode(payload, _jwt_secret, algorithm="HS256")
+        token = jwt.encode(payload, _jwt_secret or "", algorithm="HS256")
         log.info("JWT generated for user=%s role=%s", email, role)
         return token
 
@@ -106,7 +106,7 @@ def generate_refresh_token(user_id: str, email: str) -> str | None:
             "iat": now,
             "exp": now + (30 * 24 * 3600),  # 30 days
         }
-        return jwt.encode(payload, _jwt_secret, algorithm="HS256")
+        return jwt.encode(payload, _jwt_secret or "", algorithm="HS256")
 
     except (ImportError, Exception):
         return None
@@ -131,7 +131,7 @@ def verify_token(token: str) -> dict | None:
 
     try:
         import jwt
-        payload = jwt.decode(token, _jwt_secret, algorithms=["HS256"])
+        payload = jwt.decode(token, _jwt_secret or "", algorithms=["HS256"])
         return payload
 
     except ImportError:
@@ -192,4 +192,4 @@ def extract_user_from_token() -> dict | None:
 def is_jwt_enabled() -> bool:
     """Check if JWT authentication is configured and available."""
     _ensure_init()
-    return _jwt_ready
+    return bool(_jwt_ready)

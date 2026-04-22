@@ -19,7 +19,7 @@ from utils.logger import get_logger
 log = get_logger("agent_runner")
 
 # ─── Constants ────────────────────────────────────────────────────────────────
-DEFAULT_MAX_STEPS = 7
+DEFAULT_MAX_STEPS: int = 7
 HARD_MAX_STEPS = 15
 DOC_CONTEXT_MAX_CHARS = 2000   # Max document context chars sent to agent
 
@@ -50,8 +50,8 @@ class AgentResult:
     tools_used: list = field(default_factory=list)
     total_time_ms: int = 0
     task: str = ""
-    error: str = None
-    document_used: str = None   # Phase 8: filename if document was used
+    error: str | None = None
+    document_used: str | None = None   # Phase 8: filename if document was used
 
     def to_dict(self, include_steps: bool = False) -> dict:
         d = {
@@ -200,9 +200,9 @@ class AgentRunner:
         self._tools = tool_executor
         self._memory = memory_service
 
-    def run(self, task: str, history: list = None, user_id: str = "default",
+    def run(self, task: str, history: list | None = None, user_id: str = "default",
             max_steps: int = DEFAULT_MAX_STEPS, debug: bool = False,
-            document_context: dict = None) -> AgentResult:
+            document_context: dict | None = None) -> AgentResult:
         """
         Execute an autonomous agent run for a given task.
 
@@ -309,7 +309,7 @@ class AgentRunner:
                 # Record THINK step
                 steps.append(StepRecord(
                     step=step_num, phase="THINK",
-                    content=thought,
+                    content=thought or "",
                     timestamp=time.time(),
                 ))
 
@@ -327,13 +327,13 @@ class AgentRunner:
                     elapsed = int((time.time() - t0) * 1000)
                     return AgentResult(
                         success=True,
-                        final_answer=thought,
+                        final_answer=thought or "",
                         steps=[s.to_dict() for s in steps] if debug else [],
                         steps_taken=step_num,
                         tools_used=list(tools_used),
                         total_time_ms=elapsed,
                         task=task,
-                        document_used=doc_filename or None,
+                        document_used=doc_filename or "",
                     )
 
                 # ── ACT: Execute the planned action ───────────────────────
@@ -402,7 +402,7 @@ class AgentRunner:
 
                 work_history.append({
                     "step": step_num,
-                    "thought": thought[:200],
+                    "thought": (thought or "")[:200],
                     "action": f"{action_type}:{action_name}" if action_name else action_type,
                     "observation": observation[:300],
                 })
@@ -437,14 +437,14 @@ class AgentRunner:
             tools_used=list(tools_used),
             total_time_ms=elapsed,
             task=task,
-            document_used=doc_filename or None,
+            document_used=doc_filename or "",
         )
 
     # ── Streaming Interface ───────────────────────────────────────────────────
 
-    def run_stream(self, task: str, history: list = None, user_id: str = "default",
+    def run_stream(self, task: str, history: list | None = None, user_id: str = "default",
                    max_steps: int = DEFAULT_MAX_STEPS,
-                   document_context: dict = None):
+                   document_context: dict | None = None):
         """
         Generator that yields step events for real-time streaming.
         Phase 8: Supports document_context for document analysis streaming.
@@ -592,7 +592,7 @@ class AgentRunner:
 
                 work_history.append({
                     "step": step_num,
-                    "thought": thought[:200],
+                    "thought": (thought or "")[:200],
                     "action": f"{action_type}:{action_name}" if action_name else action_type,
                     "observation": observation[:300],
                 })
@@ -700,7 +700,7 @@ class AgentRunner:
         return summary[:DOC_CONTEXT_MAX_CHARS] + "\n\n[... document summary truncated for context limit]"
 
     def _synthesize_final(self, task: str, work_history: list,
-                          document_context: dict = None) -> str:
+                          document_context: dict | None = None) -> str:
         """Use LLM to synthesize a final answer from work history."""
         if not work_history:
             return "I wasn't able to complete this task. Please try rephrasing your request."

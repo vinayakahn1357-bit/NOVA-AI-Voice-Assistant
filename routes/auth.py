@@ -117,4 +117,9 @@ def serve_login():
 @login_required
 def serve_app():
     """Main NOVA AI assistant application (requires auth)."""
-    return send_from_directory(FRONTEND_DIR, "index.html")
+    from flask import make_response
+    resp = make_response(send_from_directory(FRONTEND_DIR, "index.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
