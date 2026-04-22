@@ -218,7 +218,7 @@ class EmbeddingRetriever(BaseRetriever):
     def _get_model(self):
         """Lazy-load the sentence-transformers model on first use."""
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped,import-not-found]
             log.info("Loading embedding model '%s'...", self.MODEL_NAME)
             self._model = SentenceTransformer(self.MODEL_NAME)
             log.info("Embedding model loaded (dim=%d)", self._model.get_sentence_embedding_dimension())
@@ -340,7 +340,7 @@ def create_retriever() -> BaseRetriever:
 
     # auto mode: try embeddings, fallback to TF-IDF
     try:
-        import sentence_transformers  # noqa: F401
+        import sentence_transformers  # type: ignore[import-untyped,import-not-found]  # noqa: F401
         log.info("sentence-transformers available — using EmbeddingRetriever")
         return EmbeddingRetriever()
     except ImportError:

@@ -7,6 +7,7 @@ Phase 7: agent run storage and recall for autonomous agent context.
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Optional
 from utils.logger import get_logger
 
 log = get_logger("memory")
@@ -24,11 +25,11 @@ class MemoryService:
     Phase 7: adds agent run storage for autonomous agent context.
     """
 
-    def __init__(self, nova_memory, bg_pool: ThreadPoolExecutor, db_memory=None):
-        self._memory = nova_memory
-        self._db_memory = db_memory
+    def __init__(self, nova_memory: Any, bg_pool: ThreadPoolExecutor, db_memory: Any = None):
+        self._memory: Any = nova_memory
+        self._db_memory: Any = db_memory
         self._pool = bg_pool
-        self._use_db = db_memory is not None
+        self._use_db: bool = db_memory is not None
 
         # Phase 7: in-memory agent run history (when DB not available)
         self._agent_runs: dict[str, list] = {}  # user_id → list of run summaries
@@ -40,19 +41,19 @@ class MemoryService:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def get_context(self, user_id: str = None) -> str:
+    def get_context(self, user_id: Optional[str] = None) -> str:
         """Get the memory context string for prompt injection."""
         if self._use_db and user_id:
             return self._db_memory.get_memory_context(user_id)
         return self._memory.get_memory_context()
 
-    def get_stats(self, user_id: str = None) -> dict:
+    def get_stats(self, user_id: Optional[str] = None) -> dict:
         """Get memory stats (facts, interests, etc.)."""
         if self._use_db and user_id:
             return self._db_memory.get_stats(user_id)
         return self._memory.get_stats()
 
-    def reset(self, user_id: str = None):
+    def reset(self, user_id: Optional[str] = None):
         """Clear all learned memory."""
         if self._use_db and user_id:
             self._db_memory.reset(user_id)
@@ -63,7 +64,7 @@ class MemoryService:
             del self._agent_runs[user_id]
         log.info("Memory reset (user=%s).", user_id or "global")
 
-    def record_turn(self, user_id: str = None):
+    def record_turn(self, user_id: Optional[str] = None):
         """Record a conversation turn (background, non-blocking)."""
         if self._use_db and user_id:
             self._safe_submit(self._db_memory.record_conversation, user_id)
@@ -95,7 +96,7 @@ class MemoryService:
 
     def extract_and_store(self, user_msg: str, nova_reply: str,
                           model: str, provider_config: dict,
-                          user_id: str = None):
+                          user_id: Optional[str] = None):
         """Extract facts/interests from a turn (background, non-blocking)."""
         if self._should_skip_extraction(user_msg):
             log.debug("Skipping extraction — trivial message: '%s'", user_msg[:40])
@@ -112,7 +113,7 @@ class MemoryService:
             )
 
     def generate_daily_summary(self, history: list, model: str,
-                                provider_config: dict, user_id: str = None):
+                                provider_config: dict, user_id: Optional[str] = None):
         """Generate a daily conversation summary (background, non-blocking)."""
         if self._use_db and user_id:
             self._safe_submit(

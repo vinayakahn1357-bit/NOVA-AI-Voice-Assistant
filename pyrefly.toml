@@ -3,3 +3,6 @@
 # These are not real source files
 project_includes = ["*.py"]
 project_excludes = ["__pyrefly_virtual__/**", "verify_personality.py", "check_settings.py"]
+
+# Optional/unavailable third-party packages — suppress module-not-found errors
+ignore_missing_imports = ["sentence_transformers"]

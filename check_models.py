@@ -22,7 +22,7 @@ TEST_MSG = [
 ]
 
 http = req_lib.Session()
-http.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=8))
+http.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=8))  # type: ignore[arg-type]
 
 TIMEOUT = 30
 

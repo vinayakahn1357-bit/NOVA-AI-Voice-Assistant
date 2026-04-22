@@ -167,8 +167,8 @@ def update_settings(data, role="user"):
 
 # Pooled HTTP session for model listing (Fix #11)
 _model_session = requests.Session()
-_model_session.mount("http://", HTTPAdapter(pool_connections=2, pool_maxsize=4))
-_model_session.mount("https://", HTTPAdapter(pool_connections=2, pool_maxsize=4))
+_model_session.mount("http://", HTTPAdapter(pool_connections=2, pool_maxsize=4))   # type: ignore[arg-type]
+_model_session.mount("https://", HTTPAdapter(pool_connections=2, pool_maxsize=4))  # type: ignore[arg-type]
 
 
 def list_models():

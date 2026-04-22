@@ -40,9 +40,10 @@ def tool_calculator(expression):
     """
     import ast
     import operator
+    from typing import Any
 
     # Allowed binary operators
-    _OPS = {
+    _OPS: dict[type, Any] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -273,6 +274,9 @@ class ToolExecutor:
 
     def _execute_plugin(self, tool_name, argument):
         """Execute a plugin tool with response validation."""
+        if self._plugin_manager is None:
+            return {"tool": tool_name, "success": False, "result": None,
+                    "error": "Plugin manager not available"}
         input_data = {"argument": argument} if isinstance(argument, str) else argument
 
         response = self._plugin_manager.execute(tool_name, input_data)

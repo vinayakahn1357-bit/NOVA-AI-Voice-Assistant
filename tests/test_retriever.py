@@ -107,7 +107,7 @@ class TestEmbeddingRetrieverAvailability:
     @pytest.fixture
     def has_sentence_transformers(self):
         try:
-            import sentence_transformers
+            import sentence_transformers  # type: ignore[import-untyped,import-not-found]
             return True
         except ImportError:
             return False
