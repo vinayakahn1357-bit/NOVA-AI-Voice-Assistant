@@ -1,6 +1,7 @@
 """
-services/model_router.py — Deterministic Dual-Provider Router for NOVA V2
+services/model_router.py — Deterministic Dual-Provider Router for NOVA V2 (Phase 13)
 Routes queries to Groq (fast default) or NVIDIA (advanced reasoning).
+Phase 13: PDF/realtime/report-aware routing.
 Simple, deterministic, no overhead.
 """
 
@@ -24,6 +25,12 @@ class ModelRouter:
     # Query types that benefit from NVIDIA's deeper reasoning
     _NVIDIA_QUERY_TYPES = frozenset({
         "coding", "reasoning", "math", "complex_task", "planning",
+        "pdf_analysis", "report",  # Phase 13: deep comprehension
+    })
+
+    # Query types that should stay on Groq (speed-first)
+    _GROQ_PRIORITY_TYPES = frozenset({
+        "greeting", "simple_qa", "conversation", "realtime",
     })
 
     # Keywords that suggest need for advanced reasoning
@@ -74,6 +81,14 @@ class ModelRouter:
             log.info(
                 "Router: groq (short query, len=%d < 40)",
                 len(query.strip()),
+            )
+            return "groq"
+
+        # Rule 1.5: Groq-priority types → Groq (speed matters)
+        if query_type in self._GROQ_PRIORITY_TYPES:
+            log.info(
+                "Router: groq (speed-priority type=%s)",
+                query_type,
             )
             return "groq"
 

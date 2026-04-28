@@ -113,17 +113,38 @@ class ResponseFormatter:
             return self._format_planning(text)
         elif query_type == "greeting":
             return self._format_greeting(text)
+        elif query_type == "pdf_analysis":
+            return self._format_pdf_analysis(text)
+        elif query_type == "realtime":
+            return self._format_realtime(text)
+        elif query_type == "report":
+            return self._format_report(text)
         return text
 
     @staticmethod
     def _format_coding(text: str) -> str:
-        """Ensure coding responses have proper structure."""
-        # Add language tags to bare code blocks (``` without language)
-        text = re.sub(
-            r'```\s*\n((?:def |class |import |from |function |const |let |var |#include))',
-            r'```python\n\1',
-            text,
-        )
+        """Ensure coding responses have proper structure and language tags."""
+        # Auto-detect language for bare code blocks (``` without language)
+        lang_patterns = {
+            r'(?:def |class |import |from |@\w)': 'python',
+            r'(?:function |const |let |var |=>|require\()': 'javascript',
+            r'(?:<html|<div|<head|<body|<!DOCTYPE)': 'html',
+            r'(?:SELECT |INSERT |CREATE TABLE|ALTER )': 'sql',
+            r'(?:#include|int main|std::)': 'cpp',
+            r'(?:public class|System\.out|void main)': 'java',
+            r'(?:fn |let mut |use std|impl )': 'rust',
+            r'(?:func |package main|fmt\.)': 'go',
+        }
+
+        def _tag_code_block(match):
+            code = match.group(1)
+            for pattern, lang in lang_patterns.items():
+                if re.search(pattern, code):
+                    return f'```{lang}\n{code}```'
+            return match.group(0)  # Keep as-is if no language detected
+
+        text = re.sub(r'```\s*\n((?:(?!```).)*)```', _tag_code_block, text, flags=re.DOTALL)
+
         # Ensure code blocks have a blank line before them for readability
         text = re.sub(r'([^\n])\n```', r'\1\n\n```', text)
         return text
@@ -169,6 +190,33 @@ class ResponseFormatter:
                 text = ' '.join(sentences[:3])
                 if not text.endswith(('.', '!', '?')):
                     text += '.'
+        return text
+
+    @staticmethod
+    def _format_pdf_analysis(text: str) -> str:
+        """Ensure PDF analysis responses have executive summary structure."""
+        # If the response is substantial but lacks structure, add visual separation
+        if len(text.split()) > 100 and not re.search(r'^#{1,3}\s', text, re.MULTILINE):
+            # Add a subtle separator before any numbered points
+            text = re.sub(r'(\n)(\d+[.)\s])', r'\1\n\2', text)
+        return text
+
+    @staticmethod
+    def _format_realtime(text: str) -> str:
+        """Ensure real-time responses lead with the key fact and cite sources."""
+        # Clean up any raw search result formatting leaks
+        text = re.sub(r'\[REAL-TIME WEB SEARCH RESULTS\].*?\[INSTRUCTION:.*?\]',
+                      '', text, flags=re.DOTALL)
+        return text.strip()
+
+    @staticmethod
+    def _format_report(text: str) -> str:
+        """Ensure report-style responses have sections."""
+        # If long response lacks headers, it's likely already well-structured
+        # by the agent prompt. Light touch formatting only.
+        if len(text.split()) > 150 and not re.search(r'^#{1,3}\s', text, re.MULTILINE):
+            # Try to find natural section breaks
+            text = re.sub(r'\n(?=[A-Z][a-z]+ [A-Z])', r'\n\n', text)
         return text
 
     def format_for_merge(self, text: str) -> str:

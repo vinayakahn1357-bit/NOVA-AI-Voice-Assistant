@@ -880,17 +880,20 @@ function applyVoicePreset(utterance, presetKey) {
 }
 
 // ── Neural TTS via edge-tts backend ──────────────────────────────────────────
-// Map voice presets → Edge TTS voice names
+// Map voice presets → Edge TTS voice names (Multilingual Neural = highest quality)
 const EDGE_VOICE_MAP = {
-    nova:    'en-IN-NeerjaExpressiveNeural', // Natural Indian English female
-    anya:    'en-US-AnaNeural',              // Child-like voice (closest to Anya)
-    mitsuri: 'en-IN-NeerjaNeural',           // Softer Indian English female
-    madara:  'en-US-ChristopherNeural',      // Deep authoritative male (closest to Madara)
+    nova:    'en-US-AvaMultilingualNeural',    // Microsoft's best female — crystal clear, natural
+    anya:    'en-GB-MaisieNeural',             // Young British female — bright, playful energy
+    mitsuri: 'en-US-EmmaMultilingualNeural',   // Warm, gentle female — soft and distinct from Nova
+    madara:  'en-US-AndrewMultilingualNeural', // Deep, rich male — commanding authority
 };
 
-// Extra Edge TTS parameters per preset (rate/pitch sent to backend)
+// Per-voice Edge TTS parameters (rate/pitch sent to backend for character tuning)
 const EDGE_TTS_PARAMS = {
-    madara: { rate: '-15%', pitch: '-3Hz' },  // Slower + deeper for Madara dominance
+    nova:    { rate: '+2%',  pitch: '+0Hz'  }, // Natural pace, default pitch — let Ava shine
+    anya:    { rate: '-3%',  pitch: '+4Hz'  }, // Slightly slower, higher pitch — playful curiosity
+    mitsuri: { rate: '-6%',  pitch: '+2Hz'  }, // Gentler pace, warm lift — soft and bubbly
+    madara:  { rate: '-18%', pitch: '-4Hz'  }, // Slow and deep — Uchiha commanding presence
 };
 
 // Active HTML5 Audio element (so we can stop/volume-control it)

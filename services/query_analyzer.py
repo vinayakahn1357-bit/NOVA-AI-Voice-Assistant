@@ -1,6 +1,7 @@
 """
-services/query_analyzer.py — Adaptive Intelligence Layer for NOVA
+services/query_analyzer.py — Adaptive Intelligence Layer for NOVA (Phase 13)
 Detects query type, complexity, and suggests optimal model parameters.
+Phase 13: pdf_analysis, report, realtime query types.
 Does NOT override user-selected mode — enhances results within it.
 """
 
@@ -14,17 +15,21 @@ QUERY_TYPES = {
     "greeting":       {"complexity": 1, "optimal_tokens": 128,  "temperature": 0.8},
     "simple_qa":      {"complexity": 2, "optimal_tokens": 256,  "temperature": 0.7},
     "explanation":    {"complexity": 4, "optimal_tokens": 512,  "temperature": 0.7},
-    "coding":         {"complexity": 7, "optimal_tokens": 1024, "temperature": 0.4},
-    "reasoning":      {"complexity": 8, "optimal_tokens": 1024, "temperature": 0.5},
+    "coding":         {"complexity": 7, "optimal_tokens": 2048, "temperature": 0.4},
+    "reasoning":      {"complexity": 8, "optimal_tokens": 2048, "temperature": 0.5},
     "creative":       {"complexity": 5, "optimal_tokens": 768,  "temperature": 0.9},
     "math":           {"complexity": 7, "optimal_tokens": 512,  "temperature": 0.3},
     "conversation":   {"complexity": 2, "optimal_tokens": 256,  "temperature": 0.75},
-    "complex_task":   {"complexity": 9, "optimal_tokens": 1536, "temperature": 0.5},
+    "complex_task":   {"complexity": 9, "optimal_tokens": 2048, "temperature": 0.5},
     # Phase 5: Agent modes
     "decision":       {"complexity": 6, "optimal_tokens": 1024, "temperature": 0.5},
     "opinion":        {"complexity": 5, "optimal_tokens": 768,  "temperature": 0.7},
-    "planning":       {"complexity": 8, "optimal_tokens": 1536, "temperature": 0.5},
+    "planning":       {"complexity": 8, "optimal_tokens": 2048, "temperature": 0.5},
     "tool_use":       {"complexity": 1, "optimal_tokens": 128,  "temperature": 0.3},
+    # Phase 13: Premium query types
+    "pdf_analysis":   {"complexity": 7, "optimal_tokens": 2048, "temperature": 0.4},
+    "report":         {"complexity": 8, "optimal_tokens": 2048, "temperature": 0.5},
+    "realtime":       {"complexity": 3, "optimal_tokens": 512,  "temperature": 0.5},
 }
 
 # ─── Pattern Matchers ─────────────────────────────────────────────────────────
@@ -80,6 +85,20 @@ _DECISION_KEYWORDS = frozenset({
 _OPINION_KEYWORDS = frozenset({
     "opinion", "suggest", "think", "believe", "advice", "advise",
     "preference", "recommendation",
+})
+
+# Phase 13: Real-time query keywords
+_REALTIME_KEYWORDS = frozenset({
+    "latest", "newest", "recent", "current", "today", "breaking",
+    "news", "update", "score", "price", "weather", "forecast",
+    "stock", "trending", "happening",
+})
+
+# Phase 13: Report / essay keywords
+_REPORT_KEYWORDS = frozenset({
+    "report", "essay", "article", "paper", "document", "thesis",
+    "analysis", "review", "assessment", "evaluation", "audit",
+    "comprehensive", "detailed", "in-depth", "thorough",
 })
 
 
@@ -180,6 +199,16 @@ class QueryAnalyzer:
         best = max(scores, key=scores.get)
         if scores[best] >= 2:
             return best
+
+        # Phase 13: Real-time query detection
+        realtime_score = len(words & _REALTIME_KEYWORDS)
+        if realtime_score >= 2:
+            return "realtime"
+
+        # Phase 13: Report / essay detection
+        report_score = len(words & _REPORT_KEYWORDS)
+        if report_score >= 2:
+            return "report"
 
         # Length-based classification
         word_count = len(message.split())

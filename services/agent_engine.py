@@ -1,10 +1,11 @@
 """
-services/agent_engine.py - AI Agent Decision Engine for NOVA (Phase 5)
+services/agent_engine.py - AI Agent Decision Engine for NOVA (Phase 13)
 Intercepts between QueryAnalyzer and LLM to decide HOW to respond:
 - Normal: standard LLM response
 - Decision: structured pros/cons analysis with recommendation
 - Opinion: confident, opinionated suggestion
 - Planning: multi-step task breakdown
+- Reasoning: deep analytical evaluation and logical breakdown
 - Tool: execute a built-in tool and return result
 
 The agent does NOT replace the LLM — it augments the prompt with agent-mode
@@ -49,6 +50,20 @@ _PLANNING_PATTERNS = [
     r"(?:project|app|website|system|api|backend|frontend|application)\s+(?:from scratch|from zero|step by step)",
 ]
 
+# Phase 13: Structured reasoning patterns
+_REASONING_PATTERNS = [
+    r"(?:think|reason|analyze|analyse) (?:about|through|deeply|carefully)",
+    r"(?:why does|why do|why is|why are|why would|why can't)",
+    r"(?:explain the logic|walk me through|break down)",
+    r"(?:what are the implications|consequences|effects) of",
+    r"(?:how would you approach|how should i think about)",
+    r"(?:consider|evaluate|assess) (?:the|this|whether)",
+    r"(?:pros? and cons?|advantages? and disadvantages?|trade-?offs?)",
+    r"(?:is it (?:better|worse|possible|feasible) to)",
+    r"(?:what (?:would|could|might) happen if)",
+    r"(?:critically|thoroughly|rigorously|systematically)\s+(?:analyze|examine|review)",
+]
+
 _TOOL_KEYWORDS = {
     "calculator": ["calculate", "compute", "evaluate", "what is \\d"],
     "system_info": ["system info", "cpu usage", "memory usage", "ram", "system status"],
@@ -73,6 +88,7 @@ class AgentEngine:
         self._compiled_decision = [re.compile(p, re.IGNORECASE) for p in _DECISION_PATTERNS]
         self._compiled_opinion = [re.compile(p, re.IGNORECASE) for p in _OPINION_PATTERNS]
         self._compiled_planning = [re.compile(p, re.IGNORECASE) for p in _PLANNING_PATTERNS]
+        self._compiled_reasoning = [re.compile(p, re.IGNORECASE) for p in _REASONING_PATTERNS]
 
     def process(self, message, query_analysis=None):
         """
@@ -118,6 +134,8 @@ class AgentEngine:
             return self._build_opinion(message, qa)
         elif mode == "planning":
             return self._build_planning(message, qa)
+        elif mode == "reasoning":
+            return self._build_reasoning(message, qa)
 
         # 3. Default: normal mode
         return {
@@ -147,6 +165,11 @@ class AgentEngine:
         for pat in self._compiled_planning:
             if pat.search(lower):
                 return "planning"
+
+        # Phase 13: Reasoning mode: deep analytical queries
+        for pat in self._compiled_reasoning:
+            if pat.search(lower):
+                return "reasoning"
 
         return "normal"
 
@@ -223,6 +246,42 @@ class AgentEngine:
             "agent_mode": "planning",
             "action": "create_plan",
             "confidence": 0.85,
+            "prompt_augment": augment,
+            "tool_result": None,
+            "skip_llm": False,
+        }
+
+    def _build_reasoning(self, message, qa):
+        """Phase 13: Build structured reasoning mode prompt augmentation."""
+        augment = (
+            "\n\n[AGENT MODE: STRUCTURED REASONING]\n"
+            "The user requires deep, analytical thinking. "
+            "You MUST structure your response using this framework:\n\n"
+            "## 🧠 Understanding\n"
+            "Restate the core question/problem in precise terms. "
+            "Identify what's really being asked.\n\n"
+            "## 🔍 Analysis\n"
+            "Examine the key factors systematically:\n"
+            "- Consider multiple perspectives\n"
+            "- Identify assumptions and constraints\n"
+            "- Evaluate evidence for each position\n"
+            "- Note edge cases and exceptions\n\n"
+            "## ⚖️ Trade-offs\n"
+            "Explicitly compare advantages vs disadvantages. "
+            "Use a clear structure (table, pros/cons, etc.)\n\n"
+            "## ✅ Conclusion\n"
+            "State your reasoned conclusion clearly. "
+            "Include your confidence level and what could change your answer.\n\n"
+            "Think like a world-class analyst. "
+            "Show your reasoning chain — don't just state conclusions. "
+            "Be intellectually honest about uncertainty.\n"
+        )
+
+        log.info("Agent: REASONING mode (query: %.60s...)", message)
+        return {
+            "agent_mode": "reasoning",
+            "action": "structured_analysis",
+            "confidence": 0.90,
             "prompt_augment": augment,
             "tool_result": None,
             "skip_llm": False,

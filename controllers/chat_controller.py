@@ -190,8 +190,8 @@ class ChatController:
 
     def _inject_document_context(self, message: str, session_id: str) -> str:
         """
-        Phase 11: RAG-based context injection.
-        Uses retriever to find relevant chunks instead of injecting full summary.
+        Phase 13: Premium PDF context injection.
+        Uses structured analysis prompts with retrieval-augmented context.
         Falls back to summary if retriever is unavailable.
         """
         if not self._document_store:
@@ -208,36 +208,44 @@ class ChatController:
         filename = doc["filename"]
         doc_hash = doc.get("doc_hash", "")
 
-        # Phase 11: RAG retrieval
+        # Phase 13: Premium PDF analysis via PromptBuilder
+        # Try RAG retrieval first
+        retrieved_chunks = None
         if (self._retriever
                 and ENABLE_DOCUMENT_EMBEDDINGS
                 and doc_hash
                 and self._retriever.is_indexed(doc_hash)):
-            retrieved = self._retriever.retrieve(doc_hash, message)
-            if retrieved:
-                from services.smart_responder import SmartResponder
-                context = SmartResponder.build_retrieval_context(retrieved, filename)
+            retrieved_chunks = self._retriever.retrieve(doc_hash, message)
 
-                augmented = (
-                    f"You are answering based on a previously uploaded document: {filename}.\n\n"
-                    f"Relevant document sections (retrieved by relevance):\n{context}\n\n"
-                    f"When citing information, mention the source page number.\n\n"
-                    f"User's question: {message}"
-                )
-                log.info("RAG context injected: %d chunks from '%s' for session %s",
-                         len(retrieved), filename, session_id)
-                return augmented
+        # Use the premium PDF analysis prompt builder
+        try:
+            from services.prompt_builder import PromptBuilder
+            builder = PromptBuilder.__new__(PromptBuilder)
+            augmented = builder.build_pdf_analysis_prompt(
+                user_question=message,
+                filename=filename,
+                retrieved_chunks=retrieved_chunks,
+                summary=doc.get("summary", ""),
+            )
 
-        # Fallback: summary-based injection
-        context = (
-            f"You are answering based on a previously uploaded document: "
-            f"{filename}.\n\n"
-            f"Document context:\n{doc['summary']}\n\n"
-            f"User's question: {message}"
-        )
-        log.info("Summary context injected from store for session %s ('%s')",
-                 session_id, filename)
-        return context
+            chunk_count = len(retrieved_chunks) if retrieved_chunks else 0
+            log.info("Premium PDF context injected: %d chunks from '%s' for session %s",
+                     chunk_count, filename, session_id)
+            return augmented
+
+        except Exception as exc:
+            log.warning("Premium PDF prompt failed, using fallback: %s", exc)
+
+            # Fallback: summary-based injection (original behavior)
+            context = (
+                f"You are answering based on a previously uploaded document: "
+                f"{filename}.\n\n"
+                f"Document context:\n{doc['summary']}\n\n"
+                f"User's question: {message}"
+            )
+            log.info("Summary context injected from store for session %s ('%s')",
+                     session_id, filename)
+            return context
 
     def _get_retrieved_chunks(self, message: str, session_id: str) -> list[dict]:
         """Get retrieved chunks for the current query (for citation formatting)."""

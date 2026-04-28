@@ -1,8 +1,9 @@
 """
-app.py — NOVA AI Assistant — Application Factory (Phase 7)
+app.py — NOVA AI Assistant — Application Factory (Phase 13)
 Thin entry point wiring all modules.
 Phase 6: PostgreSQL, Redis, TaskQueue, Plugin System, JWT, Structured Logging.
 Phase 7: Autonomous AgentRunner, WorkflowEngine, Unified Capabilities.
+Phase 13: Response Quality Enforcement, Real-Time Search, Smart Routing.
 """
 
 import os
@@ -113,6 +114,8 @@ from utils.response_formatter import ResponseFormatter
 from utils.response_sanitizer import ResponseSanitizer
 from services.response_pipeline import ResponsePipeline
 from services.personality_enforcer import PersonalityEnforcer
+from services.response_quality import ResponseQualityEnforcer
+from services.realtime_service import RealtimeSearchService
 from controllers.chat_controller import ChatController
 
 # Wire services together (Phase V2: Groq + NVIDIA dual-provider)
@@ -135,11 +138,19 @@ ai_service          = AIService(
 command_service     = CommandService(session_service, memory_service)
 # Phase 12: Personality Enforcer (post-processing enforcement engine)
 personality_enforcer = PersonalityEnforcer()
+# Phase 13: Response Quality Enforcer + Real-Time Search
+quality_enforcer    = ResponseQualityEnforcer()
+realtime_service    = RealtimeSearchService()
 response_pipeline   = ResponsePipeline(
     ai_service, query_analyzer, agent_engine,
     response_formatter, response_sanitizer, cache_service,
     personality_enforcer=personality_enforcer,
+    quality_enforcer=quality_enforcer,
+    realtime_service=realtime_service,
 )
+log.info("Phase 13 — ResponseQualityEnforcer: ACTIVE")
+log.info("Phase 13 — RealtimeSearchService: %s",
+         "ACTIVE" if realtime_service.is_available else "INACTIVE")
 
 # ─── Phase 7: Autonomous Agent & Workflow Engine ──────────────────────────────
 from services.agent_runner import AgentRunner

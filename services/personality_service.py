@@ -445,11 +445,84 @@ PERSONALITIES = {
 VALID_PERSONALITIES = set(PERSONALITIES.keys())
 
 
+# ─── Phase 13: Voice Hints for TTS Synchronization ───────────────────────────
+# Maps personality keys to TTS voice tuning parameters.
+# Used by tts_service to adjust prosody per personality.
+
+VOICE_HINTS = {
+    "default": {
+        "pace": "normal",        # slow, normal, fast
+        "emphasis": "moderate",  # subtle, moderate, dramatic
+        "pauses": "natural",     # minimal, natural, dramatic
+        "warmth": "balanced",    # cool, balanced, warm
+    },
+    "teacher": {
+        "pace": "slow",
+        "emphasis": "moderate",
+        "pauses": "natural",
+        "warmth": "warm",
+    },
+    "friend": {
+        "pace": "normal",
+        "emphasis": "moderate",
+        "pauses": "natural",
+        "warmth": "warm",
+    },
+    "expert": {
+        "pace": "normal",
+        "emphasis": "subtle",
+        "pauses": "minimal",
+        "warmth": "cool",
+    },
+    "coach": {
+        "pace": "fast",
+        "emphasis": "dramatic",
+        "pauses": "minimal",
+        "warmth": "warm",
+    },
+    "genius": {
+        "pace": "fast",
+        "emphasis": "moderate",
+        "pauses": "minimal",
+        "warmth": "cool",
+    },
+    "funny": {
+        "pace": "fast",
+        "emphasis": "dramatic",
+        "pauses": "natural",
+        "warmth": "warm",
+    },
+    "hacker": {
+        "pace": "fast",
+        "emphasis": "subtle",
+        "pauses": "minimal",
+        "warmth": "cool",
+    },
+    "calm": {
+        "pace": "slow",
+        "emphasis": "subtle",
+        "pauses": "dramatic",
+        "warmth": "warm",
+    },
+    "romantic": {
+        "pace": "slow",
+        "emphasis": "moderate",
+        "pauses": "dramatic",
+        "warmth": "warm",
+    },
+}
+
+
 # ─── Helper Functions ─────────────────────────────────────────────────────────
 
 def get_personality_config(key: str) -> dict:
     """Return the full personality config dict. Falls back to 'default'."""
     return PERSONALITIES.get(key) or PERSONALITIES["default"]
+
+
+def get_voice_hints(key: str) -> dict:
+    """Return voice synchronization hints for TTS integration."""
+    return VOICE_HINTS.get(key, VOICE_HINTS["default"])
 
 
 def get_personality_temperature(key: str) -> float:

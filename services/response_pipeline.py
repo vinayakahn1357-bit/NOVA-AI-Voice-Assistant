@@ -1,14 +1,19 @@
 """
-services/response_pipeline.py — Modular Response Pipeline for NOVA (Phase 12)
+services/response_pipeline.py — Modular Response Pipeline for NOVA (Phase 13)
 Orchestrates the entire response flow as a clean, sequential pipeline:
 
-    Analyze → Agent → Route → Generate → Format → Enforce → Sanitize → Package
+    Analyze → Agent → Route → Generate → Format → Enforce → Quality → Sanitize → Package
 
 Phase 12 additions:
   - Stage 4.5: Personality enforcement (forbidden phrases, structure patching)
   - Stage 4.6: Personality strength scoring + conditional regeneration
   - Regenerates ONCE if score < threshold, then falls back to default personality
-  - All enforcement actions are logged for debugging
+
+Phase 13 additions:
+  - Stage 4.7: Response quality enforcement (forbidden phrase cleanup, substance
+    validation, filler detection, quality scoring)
+  - Quality-based regeneration: max 1 retry with stricter prompt if quality < 0.4
+  - Safe fallback: if regen also fails, delivers best-effort response
 
 Each stage is pluggable and independently testable.
 """
@@ -21,11 +26,14 @@ from services.personality_enforcer import (
     SCORE_PASS_THRESHOLD,
     SCORE_REGEN_THRESHOLD,
 )
+from services.response_quality import ResponseQualityEnforcer
+from config import QUALITY_SCORE_THRESHOLD, QUALITY_REGEN_MAX
 
 log = get_logger("pipeline")
 
-# Singleton enforcer (stateless, safe to share)
+# Singleton enforcers (stateless, safe to share)
 _enforcer = PersonalityEnforcer()
+_quality_enforcer = ResponseQualityEnforcer()
 
 
 class ResponsePipeline:
@@ -38,7 +46,8 @@ class ResponsePipeline:
 
     def __init__(self, ai_service, query_analyzer=None, agent_engine=None,
                  response_formatter=None, response_sanitizer=None,
-                 cache_service=None, personality_enforcer=None):
+                 cache_service=None, personality_enforcer=None,
+                 quality_enforcer=None, realtime_service=None):
         self._ai = ai_service
         self._analyzer = query_analyzer
         self._agent = agent_engine
@@ -47,6 +56,10 @@ class ResponsePipeline:
         self._cache = cache_service
         # Phase 12: use injected enforcer or module-level singleton
         self._enforcer = personality_enforcer or _enforcer
+        # Phase 13: response quality enforcement
+        self._quality = quality_enforcer or _quality_enforcer
+        # Phase 13: real-time search
+        self._realtime = realtime_service
 
     def execute(self, history: list, user_message: str,
                 personality: str = "default") -> dict:
@@ -95,6 +108,22 @@ class ResponsePipeline:
 
         query_type = qa.get("query_type", "conversation")
         complexity = qa.get("complexity", 5)
+
+        # ── Stage 1.5: Real-Time Search ─────────────────────────────────
+        realtime_used = False
+        search_results = []
+
+        if self._realtime and self._realtime.detect_realtime_intent(user_message):
+            search_results = self._realtime.search(user_message)
+            if search_results:
+                search_context = self._realtime.build_search_context(
+                    search_results, user_message
+                )
+                # Inject search context as part of the message
+                user_message = f"{user_message}\n\n{search_context}"
+                realtime_used = True
+                query_type = "realtime"
+                log.info("Real-time search: %d results injected", len(search_results))
 
         # ── Stage 2: Agent Intelligence ───────────────────────────────────
         agent_result = None
@@ -193,6 +222,54 @@ class ResponsePipeline:
             # Enforcement must NEVER crash the pipeline
             log.warning("Personality enforcement failed (non-fatal): %s", exc)
 
+        # ── Stage 4.7: Response Quality Enforcement ─────────────────────
+        quality_score = 1.0
+        quality_issues = []
+        quality_regenerated = False
+
+        try:
+            ai_response, quality_score, quality_issues = self._quality.enforce(
+                ai_response, query_type, complexity
+            )
+
+            # Quality-based regeneration (max 1 retry)
+            if (quality_score < QUALITY_SCORE_THRESHOLD
+                    and query_type not in ("greeting", "simple_qa")
+                    and not personality_regenerated):  # avoid double-regen
+                log.info(
+                    "Quality score %.3f < threshold %.3f — regenerating (max %d)",
+                    quality_score, QUALITY_SCORE_THRESHOLD, QUALITY_REGEN_MAX,
+                )
+                # Regenerate with a quality-focused prompt hint
+                quality_hint = (
+                    "\n\n[QUALITY DIRECTIVE: Your previous response was too brief or "
+                    "generic. Provide a thorough, expert-level answer with concrete "
+                    "details. Do NOT use filler phrases. Lead with the key insight.]"
+                )
+                regen_response, regen_model, regen_provider, regen_meta = self._ai.generate(
+                    history, user_message,
+                    prompt_augment=prompt_augment + quality_hint,
+                    personality=personality,
+                )
+                # Re-enforce quality on the regenerated response
+                regen_cleaned, regen_score, _ = self._quality.enforce(
+                    regen_response, query_type, complexity
+                )
+                # Keep the better response (safe fallback)
+                if regen_score > quality_score:
+                    ai_response = regen_cleaned
+                    quality_score = regen_score
+                    active_model = regen_model
+                    provider = regen_provider
+                    quality_regenerated = True
+                    log.info("Quality regen succeeded: new score=%.3f", regen_score)
+                else:
+                    log.info("Quality regen did not improve (%.3f vs %.3f) — keeping original",
+                             regen_score, quality_score)
+
+        except Exception as exc:
+            log.warning("Quality enforcement failed (non-fatal): %s", exc)
+
         # ── Stage 5: Sanitize (security) ──────────────────────────────────
         was_injection = False
         if self._sanitizer:
@@ -216,6 +293,11 @@ class ResponsePipeline:
             "personality_score": round(personality_score, 3),
             "personality_regenerated": personality_regenerated,
             "personality_fallback": personality_fallback,
+            # Phase 13: Quality metadata
+            "quality_score": round(quality_score, 3),
+            "quality_regenerated": quality_regenerated,
+            # Phase 13: Real-time search metadata
+            "realtime_search": realtime_used,
         }
 
         # Add agent metadata if non-normal mode

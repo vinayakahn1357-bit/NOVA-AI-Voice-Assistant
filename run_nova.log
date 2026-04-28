@@ -1,0 +1,87 @@
+[NOVA.database] INFO  Database engine: SQLite
+[NOVA.database] INFO  Database tables initialized (SQLite)
+[NOVA.app] INFO  Phase 6 — Database: SQLite
+[NOVA.redis] INFO  Redis: disabled (no REDIS_URL configured)
+[NOVA.app] INFO  Phase 6 — Redis: disabled
+[NOVA.task_queue] INFO  TaskQueue initialized: max_workers=16
+[NOVA.app] INFO  Phase 6 — TaskQueue: 16 workers
+[NOVA.plugins] INFO  PluginManager initialized: 0 plugins registered
+[NOVA.nova_memory] INFO  SQLite ready — 13 facts, 25 interests, 46 conversations recorded.
+[NOVA.memory] INFO  Memory backend: SQLite (NovaMemory)
+[NOVA.cache] INFO  Cache backend: in-memory (TTL=300s, max=100)
+[NOVA.ai_service] INFO  HTTP session pool initialized (pool_connections=10, pool_maxsize=20)
+[NOVA.app] INFO  Phase 7 — AgentRunner: ACTIVE (max_steps=7)
+[NOVA.app] INFO  Phase 7 — WorkflowEngine: ACTIVE
+[NOVA.retriever] INFO  sentence-transformers not installed — falling back to TFIDFRetriever
+[NOVA.retriever] INFO  TFIDFRetriever initialized (scikit-learn backend)
+[NOVA.app] INFO  Phase 11 — DocumentContextStore: ACTIVE (multi-doc, max=3)
+[NOVA.app] INFO  Phase 11 — DocumentRetriever: ACTIVE (backend=tfidf)
+[NOVA.app] INFO  Phase 11 — SmartResponder: ACTIVE (exam_mode=enabled)
+[NOVA.app] INFO  Phase 9 — PersonalityStore: ACTIVE
+[NOVA.ml.personality] INFO  Model loaded: C:\NOVAbackend\ml\personality_model.pkl
+[NOVA.app] INFO  Phase 10 — PersonalityModel: ACTIVE (loaded from C:\NOVAbackend\ml\personality_model.pkl)
+[NOVA.app] INFO  GPU: NVIDIA GeForce RTX 3050 6GB Laptop GPU  VRAM 6144MB
+[NOVA.app] INFO  CPU: 10 physical / 16 logical cores
+[NOVA.app] INFO  BG pool: 20 workers
+[NOVA.app] INFO  ENV: production | Provider: groq
+[NOVA.app] INFO  Cache: ACTIVE (TTL=300s, backend=in-memory)
+[NOVA.app] INFO  Retry: max=2 backoff=0.5s
+[NOVA.app] INFO  V2 dual-provider: Groq (default) + NVIDIA (reasoning)
+[NOVA.app] INFO  Adaptive intelligence: ACTIVE (query_analyzer + response_formatter)
+[NOVA.app] INFO  Response pipeline: ACTIVE (analyze -> agent -> route -> generate -> format -> sanitize)
+[NOVA.app] INFO  Security sanitizer: ACTIVE
+[NOVA.app] INFO  Request middleware: ACTIVE (X-Request-Id + X-Nova-Latency)
+[NOVA.app] INFO  ═══════════════════════════════════════════════════════
+[NOVA.app] INFO  Phase 6 Scalable Architecture:
+[NOVA.app] INFO    Database:     SQLite
+[NOVA.app] INFO    Redis:        disabled (in-memory fallback)
+[NOVA.app] INFO    Task Queue:   16 workers
+[NOVA.app] INFO    Plugins:      0 loaded
+[NOVA.app] INFO    Cache:        in-memory LRU
+[NOVA.app] INFO    JWT Auth:     disabled (session-only)
+[NOVA.app] INFO    Encryption:   disabled (plaintext)
+[NOVA.app] INFO    Log Format:   text
+[NOVA.app] INFO  Phase 7 AI OS:
+[NOVA.app] INFO    AgentRunner:  ACTIVE (max_steps=7, tools=4)
+[NOVA.app] INFO    Workflows:    ACTIVE
+[NOVA.app] INFO    Capabilities: 4 (tools + plugins)
+[NOVA.app] INFO  Phase 11 PDF Intelligence:
+[NOVA.app] INFO    Max PDF Size: 100MB (local)
+[NOVA.app] INFO    Multi-Doc:    max 3 per session
+[NOVA.app] INFO    Retriever:    TF-IDF (scikit-learn)
+[NOVA.app] INFO    Exam Mode:    enabled
+[NOVA.app] INFO    Smart Resp:   ACTIVE (citations + suggestions)
+[NOVA.app] INFO  Phase 12 Personality Engine:
+[NOVA.app] INFO    Personalities: 10 defined
+[NOVA.app] INFO    Enforcer:     ACTIVE (forbidden phrases + structure + scoring)
+[NOVA.app] INFO    Regen:        ACTIVE (score threshold=0.5, fallback threshold=0.3)
+[NOVA.app] INFO    Romantic:     SAFE MODE (hard safety gate enabled)
+[NOVA.app] INFO  ═══════════════════════════════════════════════════════
+[NOVA.app] INFO  All blueprints registered. NOVA v5 (Phase 12) ready.
+
+  ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ 
+  ████╗  ██║██╔═══██╗██║   ██║██╔══██╗
+  ██╔██╗ ██║██║   ██║██║   ██║███████║
+  ██║╚██╗██║██║   ██║╚██  ██╔╝██╔══██║
+  ██║ ╚████║╚██████╔╝  ████╔╝ ██║  ██║
+  ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝
+
+  [NOVA v5] Waitress WSGI Server — Phase 7 Active
+  [NOVA v5] http://0.0.0.0:5000
+  [NOVA v5] Open -> http://localhost:5000
+  [NOVA v5] WSGI threads: 16
+  [NOVA v5] BG workers: 20
+  [NOVA v5] Database: SQLite
+  [NOVA v5] Redis: disabled
+  [NOVA v5] AgentRunner: ACTIVE
+  [NOVA v5] WorkflowEngine: ACTIVE
+  [NOVA v5] Capabilities: 4
+  [NOVA v5] Plugins: 0 loaded
+  [NOVA v5] GPU: Yes -- NVIDIA GeForce RTX 3050 6GB Laptop GPU
+[NOVA.jwt_auth] INFO  JWT auth module: disabled (no JWT_SECRET_KEY)
+[NOVA.auth] INFO  New user registered: report_20260425_171107@example.com (jwt=no)
+[NOVA.routes.settings] INFO  Settings GET: email=report_20260425_171107@example.com role=user admin=False
+[NOVA.settings] INFO  Settings GET: role=user
+[NOVA.routes.settings] INFO  Settings POST: email=report_20260425_171107@example.com role=user admin=False
+[NOVA.settings] INFO  Settings POST: role=user fields=['temperature', 'top_p', 'num_predict', 'system_prompt', 'provider', 'groq_model', 'nvidia_model']
+[NOVA.settings] INFO  Settings updated: provider=groq role=user blocked=none

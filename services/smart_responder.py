@@ -310,12 +310,34 @@ class SmartResponder:
     @staticmethod
     def enhance_prompt_for_exam(message: str) -> str:
         """
-        Modify the user's prompt to elicit exam-appropriate responses.
-        Adds formatting instructions for structured academic answers.
+        Phase 13: Premium exam-style prompt enhancement.
+        Modifies the user's prompt to elicit structured academic answers.
         """
+        # Detect if marks/points are mentioned
+        marks_match = re.search(r'(\d+)\s*marks?', message, re.IGNORECASE)
+        marks_hint = ""
+        if marks_match:
+            marks = int(marks_match.group(1))
+            if marks <= 2:
+                marks_hint = "Keep the answer brief (2-3 sentences). "
+            elif marks <= 5:
+                marks_hint = "Provide a medium-length answer with key points. "
+            else:
+                marks_hint = "Provide a comprehensive, detailed answer with examples. "
+
         return (
             f"{message}\n\n"
-            f"[EXAM MODE: Structure your response as a clear, concise academic answer. "
-            f"Include: definition, key points in bullet format, relevant examples. "
-            f"Highlight important terms in bold. Keep it exam-ready and to the point.]"
+            f"[EXAM MODE: Structure your response as a clear, academic answer. "
+            f"{marks_hint}"
+            f"Follow this format:\n"
+            f"1. **Definition/Introduction** — Start with a precise definition or key statement\n"
+            f"2. **Key Points** — List the main concepts in bullet points with bold terms\n"
+            f"3. **Explanation** — Elaborate on each point concisely\n"
+            f"4. **Examples** — Provide relevant real-world or technical examples\n"
+            f"5. **Diagram description** — If applicable, describe what a diagram would look like\n"
+            f"6. **Summary** — One concluding sentence\n\n"
+            f"Highlight important terms in **bold**. "
+            f"For formulas, use clear notation. "
+            f"For derivations, show each step. "
+            f"Keep it exam-ready, structured, and precise.]"
         )

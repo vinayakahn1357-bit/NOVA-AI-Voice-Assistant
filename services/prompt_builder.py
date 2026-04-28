@@ -238,3 +238,41 @@ class PromptBuilder:
         messages.insert(-1, {"role": "system", "content": regen_instruction})
         log.info("Regen prompt built for personality '%s'", personality)
         return messages
+
+    # ─── Premium PDF Analysis Prompt ──────────────────────────────────────
+
+    def build_pdf_analysis_prompt(self, user_question: str, filename: str,
+                                  retrieved_chunks: list[dict] | None = None,
+                                  summary: str = "") -> str:
+        """
+        Build a premium PDF analysis prompt that instructs the LLM to
+        interpret, synthesize, and structure document content.
+
+        Used by chat_controller when document context is detected.
+        Replaces raw text injection with structured analysis instructions.
+        """
+        # Build context from retrieved chunks or summary
+        if retrieved_chunks:
+            from services.smart_responder import SmartResponder
+            doc_context = SmartResponder.build_retrieval_context(retrieved_chunks, filename)
+        elif summary:
+            doc_context = f"[Document Summary: {filename}]\n{summary}"
+        else:
+            return user_question  # No context available
+
+        prompt = (
+            f"You are answering based on a previously uploaded document: **{filename}**.\n\n"
+            f"## Document Analysis Instructions\n"
+            f"- **Interpret and synthesize** — never just quote raw text. Extract meaning.\n"
+            f"- **Structure your response** as: Key Insight → Supporting Details → Implications\n"
+            f"- **Cite page numbers** when referencing specific content (e.g., 'As stated on Page 3...')\n"
+            f"- **Identify patterns** — connect concepts across different sections\n"
+            f"- **Explain jargon** — define technical terms inline when relevant\n"
+            f"- **Preserve critical data** — keep statistics, dates, and figures exact\n"
+            f"- **Be comprehensive** but concise — executive summary quality\n\n"
+            f"## Relevant Document Sections\n{doc_context}\n\n"
+            f"## User's Question\n{user_question}"
+        )
+
+        return prompt
+

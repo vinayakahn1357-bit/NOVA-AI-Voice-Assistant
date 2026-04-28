@@ -43,5 +43,14 @@
     "salt": "fcbe9d250597434d8809a4ef8c41ebbc",
     "provider": "email",
     "created": 1774631032
+  },
+  "report_20260425_171107@example.com": {
+    "id": "68f525dd-8949-442a-9491-9c5415e505c6",
+    "name": "Report User",
+    "email": "report_20260425_171107@example.com",
+    "hash": "3aca6ecd2ce82c3cea00c093b956b373515b469005a5e1f3dcc388c27d2508a4",
+    "salt": "d2eae3d2c6c44fd7a2740a77d7f36518",
+    "provider": "email",
+    "created": 1777117288
   }
 }
