@@ -34,31 +34,53 @@ log = get_logger("realtime")
 
 # ─── Real-Time Intent Detection Patterns ──────────────────────────────────────
 _REALTIME_PATTERNS = [
-    # Temporal keywords
-    r"\b(?:latest|newest|recent|current|today|this week|this month)\b",
+    # === Temporal keywords (standalone — single keyword triggers) ===
+    r"\b(?:latest|newest|recent|current|today|yesterday|tomorrow)\b",
     r"\b(?:right now|at the moment|currently|as of now|presently)\b",
     r"\b(?:just released|just announced|just happened|breaking)\b",
     r"\b(?:what happened|what's happening|what is happening)\b",
-    # Specific real-time query types
-    r"\b(?:news|headlines|update|updates|announcement)\b.*\b(?:about|on|for|regarding)\b",
-    r"\b(?:price|stock|rate|exchange rate|market)\b.*\b(?:of|for|today)\b",
-    r"\b(?:weather|forecast|temperature)\b.*\b(?:in|at|for|today)\b",
-    r"\b(?:score|result|match|game)\b.*\b(?:today|yesterday|last night|latest)\b",
-    r"\b(?:who won|who is winning|final score|standings)\b",
-    r"\b(?:release date|when (?:does|did|will|is))\b.*\b(?:come out|release|launch|available)\b",
+    r"\b(?:last night|last week|last month|this week|this month|this year)\b",
+    r"\b(?:live|trending|ongoing|upcoming)\b",
+
+    # === Sports queries (MANDATORY realtime) ===
+    r"\b(?:IPL|ipl|cricket|football|soccer|NBA|nba|NFL|nfl|FIFA|fifa)\b",
+    r"\b(?:EPL|epl|premier league|champions league|world cup|T20|t20|ODI|odi)\b",
+    r"\b(?:match result|match score|final score|live score|latest score)\b",
+    r"\b(?:who won|who is winning|who lost|man of the match)\b",
+    r"\b(?:score|result|match|game)\b.*\b(?:today|yesterday|last night|latest|recent)\b",
+    r"\b(?:yesterday|last night|last match|last game)\b.*\b(?:score|result|match|winner)\b",
+    r"\b(?:sports? results?|cricket results?|football results?)\b",
+    r"\b(?:standings|points? table|league table|rankings?)\b",
+
+    # === News / headlines ===
+    r"\b(?:news|headlines|update|updates|announcement)\b",
+
+    # === Finance / prices ===
+    r"\b(?:price|stock|rate|exchange rate|market|share price|crypto)\b",
     r"\b(?:how much|what is the price|cost of)\b",
-    # Explicit search intent
+    r"\b(?:bitcoin|ethereum|sensex|nifty|nasdaq|dow jones)\b",
+
+    # === Weather ===
+    r"\b(?:weather|forecast|temperature)\b.*\b(?:in|at|for|today|tomorrow)\b",
+
+    # === Explicit search intent ===
     r"\b(?:search for|look up|find out|google|search the web)\b",
     r"\b(?:what's new|what is new)\b.*\b(?:in|with|about)\b",
+
+    # === Release / availability ===
+    r"\b(?:release date|when (?:does|did|will|is))\b.*\b(?:come out|release|launch|available)\b",
+
+    # === "Can I get" / "give me" intent ===
+    r"\b(?:can (?:i|you) get|give me|show me|tell me)\b.*\b(?:result|score|news|update|price)\b",
 ]
 
 _REALTIME_RE = re.compile("|".join(_REALTIME_PATTERNS), re.IGNORECASE)
 
 # Anti-patterns: queries that LOOK temporal but aren't (historical questions)
+# IMPORTANT: Keep this TIGHT — do NOT block valid realtime queries
 _ANTI_PATTERNS = [
     r"\b(?:in (?:the )?(?:1[0-9]{3}|20[01][0-9]))\b",  # historical year references
-    r"\b(?:how did .+ work|history of|origin of|when was .+ invented)\b",
-    r"\b(?:explain|define|what is the definition)\b",
+    r"\b(?:history of|origin of|when was .+ invented)\b",
 ]
 _ANTI_RE = re.compile("|".join(_ANTI_PATTERNS), re.IGNORECASE)
 
@@ -98,13 +120,24 @@ class RealtimeSearchService:
         Returns True for temporal queries, False for historical / conceptual.
         """
         if not self._enabled:
+            log.debug("Realtime detection SKIPPED: service disabled")
             return False
 
         # Anti-pattern check: historical / definitional queries
         if _ANTI_RE.search(message):
+            log.info("Realtime detection: FALSE (anti-pattern matched) for: '%s'",
+                     message[:80])
             return False
 
-        return bool(_REALTIME_RE.search(message))
+        match = _REALTIME_RE.search(message)
+        if match:
+            log.info("Realtime detection: TRUE (matched: '%s') for: '%s'",
+                     match.group()[:40], message[:80])
+            return True
+
+        log.debug("Realtime detection: FALSE (no pattern match) for: '%s'",
+                  message[:80])
+        return False
 
     # ── Search Execution ──────────────────────────────────────────────────
 
@@ -156,8 +189,11 @@ class RealtimeSearchService:
             return []
 
     def _search_tavily(self, query: str, max_results: int) -> list[dict]:
-        """Execute search via Tavily API."""
+        """Execute search via Tavily API with advanced depth for rich content."""
         import requests
+
+        log.info("Tavily API call: query='%s' max_results=%d depth=advanced",
+                 query[:80], max_results)
 
         response = requests.post(
             "https://api.tavily.com/search",
@@ -165,24 +201,60 @@ class RealtimeSearchService:
                 "api_key": self._api_key,
                 "query": query,
                 "max_results": max_results,
-                "include_answer": False,
-                "search_depth": "basic",
+                "include_answer": True,   # get Tavily's synthesized answer too
+                "search_depth": "advanced",  # richer content, better for sports
             },
-            timeout=10,
+            timeout=15,
         )
         response.raise_for_status()
         data = response.json()
 
+        log.info("Tavily API response: status=%d, raw_results=%d",
+                 response.status_code, len(data.get("results", [])))
+
+        # Log Tavily's synthesized answer if present
+        tavily_answer = data.get("answer", "")
+        if tavily_answer:
+            log.info("Tavily synthesized answer: %s", tavily_answer[:200])
+
         results = []
-        for item in data.get("results", []):
+        for i, item in enumerate(data.get("results", [])):
+            title   = item.get("title", "").strip()
+            content = item.get("content", "").strip()
+            url     = item.get("url", "").strip()
+            date    = item.get("published_date", "").strip()
+            score   = item.get("score", 0.0)
+
+            # Log raw fields for debugging
+            log.info("  Raw result[%d]: title='%s' content_len=%d url='%s'",
+                     i, title[:60], len(content), url[:60])
+
+            # Skip results with no useful content
+            if not content or len(content) < 20:
+                log.warning("  Skipping result[%d]: content too thin (%d chars)",
+                            i, len(content))
+                continue
+
             results.append({
-                "title": item.get("title", ""),
-                "snippet": item.get("content", "")[:500],
-                "url": item.get("url", ""),
-                "date": item.get("published_date", ""),
-                "score": item.get("score", 0.0),
+                "title": title,
+                "snippet": content[:800],   # more content for richer context
+                "url": url,
+                "date": date,
+                "score": score,
             })
 
+        # Prepend Tavily's own answer as a top result if available
+        if tavily_answer and len(tavily_answer) > 30:
+            results.insert(0, {
+                "title": "Direct Answer",
+                "snippet": tavily_answer[:800],
+                "url": "",
+                "date": "",
+                "score": 1.0,
+            })
+            log.info("Tavily direct answer prepended as result[0]")
+
+        log.info("Tavily: %d usable results after filtering", len(results))
         return results
 
     def _search_brave(self, query: str, max_results: int) -> list[dict]:
@@ -220,16 +292,32 @@ class RealtimeSearchService:
     def build_search_context(results: list[dict], query: str = "") -> str:
         """
         Format search results as LLM-injectable context with source attribution.
-        The LLM can use this to provide up-to-date answers.
+        Uses clearly labeled fields to prevent numeric misinterpretation.
+        Sports scores, statistics, and prices are wrapped in explanatory text.
         """
         if not results:
             return ""
 
+        # Detect if this is a sports query for specialized formatting
+        _sports_re = re.compile(
+            r"\b(?:IPL|ipl|cricket|football|soccer|NBA|nba|NFL|nfl|FIFA|fifa|"
+            r"match|score|result|won|lost|game|league|cup|T20|ODI)\b",
+            re.IGNORECASE,
+        )
+        is_sports = bool(_sports_re.search(query))
+
         parts = [
-            "[REAL-TIME WEB SEARCH RESULTS]",
-            f"Query: {query}" if query else "",
-            f"Results retrieved: {len(results)}",
-            "─" * 40,
+            "=" * 50,
+            "REAL-TIME WEB SEARCH RESULTS",
+            "=" * 50,
+            f"User's Question: {query}" if query else "",
+            f"Number of results: {len(results)}",
+            "",
+            "IMPORTANT: The content below contains factual information from",
+            "web sources. Any numbers represent real-world data (scores,",
+            "statistics, prices, dates) — they are NOT math expressions.",
+            "Do NOT perform calculations on them.",
+            "-" * 50,
         ]
 
         for i, r in enumerate(results, 1):
@@ -238,22 +326,35 @@ class RealtimeSearchService:
             url = r.get("url", "")
             date = r.get("date", "")
 
-            entry = f"\n[{i}] {title}"
+            parts.append(f"\nSource {i}:")
+            parts.append(f"  Title: {title}")
             if date:
-                entry += f" ({date})"
-            entry += f"\n{snippet}"
+                parts.append(f"  Date: {date}")
+            parts.append(f"  Summary: {snippet}")
             if url:
-                entry += f"\nSource: {url}"
+                parts.append(f"  URL: {url}")
+            parts.append("")
 
-            parts.append(entry)
+        parts.append("-" * 50)
 
-        parts.append("\n" + "─" * 40)
-        parts.append(
-            "[INSTRUCTION: Use the above search results to provide an accurate, "
-            "up-to-date answer. Cite sources by number [1], [2], etc. If the search "
-            "results don't fully answer the question, supplement with your knowledge "
-            "and clearly indicate which parts come from search vs. general knowledge.]"
-        )
+        if is_sports:
+            parts.append(
+                "INSTRUCTION: The above search results contain SPORTS information. "
+                "Use them to provide the match result, scores, winner, and key details. "
+                "Present the information in a clear, conversational format. "
+                "Numbers like 183/6 or 3/41 are cricket scores (runs/wickets), "
+                "NOT math expressions. Cite sources naturally."
+            )
+        else:
+            parts.append(
+                "INSTRUCTION: Use the above search results to provide an accurate, "
+                "up-to-date answer. Summarize the key findings in a conversational tone. "
+                "If the search results don't fully answer the question, supplement with "
+                "your knowledge and clearly indicate which parts come from search vs. "
+                "general knowledge. Cite sources naturally."
+            )
+
+        parts.append("=" * 50)
 
         return "\n".join(parts)
 

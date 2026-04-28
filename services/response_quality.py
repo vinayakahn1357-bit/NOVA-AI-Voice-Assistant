@@ -63,6 +63,11 @@ _AI_SELF_REFS = [
     re.compile(r"my (?:training|programming|knowledge cutoff|training data)", re.IGNORECASE),
     re.compile(r"I (?:don't|do not|cannot) have (?:personal )?(?:feelings|emotions|opinions|experiences)", re.IGNORECASE),
     re.compile(r"I was (?:trained|programmed|designed) (?:to|by)", re.IGNORECASE),
+    # Phase 13 fix: Realtime denial patterns (must NEVER appear when search is active)
+    re.compile(r"I (?:don't|do not|cannot|can't) (?:have )?(?:access|browse|search) (?:to )?(?:real-?time|the internet|live|current)", re.IGNORECASE),
+    re.compile(r"I (?:don't|do not) have (?:access to )?(?:real-?time|live|current|up-to-date) (?:information|data|news)", re.IGNORECASE),
+    re.compile(r"my (?:knowledge|information|data) (?:cutoff|cut-off|is limited to|only goes)", re.IGNORECASE),
+    re.compile(r"I (?:cannot|can't) (?:browse|access|search) the (?:internet|web)", re.IGNORECASE),
 ]
 
 # ─── Minimum Word Counts by Query Type ────────────────────────────────────────
@@ -180,13 +185,28 @@ class ResponseQualityEnforcer:
         removed = 0
         for pattern in _AI_SELF_REFS:
             if pattern.search(processed):
-                # Remove the sentence containing the self-reference
+                # Try clause-level removal first (keep content after "but"/"however")
+                clause_re = re.compile(
+                    r'[^.!?\n]*' + pattern.pattern + r'[^,]*'
+                    r'(?:,\s*(?:but|however|though|although)\s+)',
+                    re.IGNORECASE,
+                )
+                clause_result = clause_re.sub("", processed).strip()
+                if clause_result and clause_result != processed.strip():
+                    # Capitalize the remaining text
+                    if clause_result[0].islower():
+                        clause_result = clause_result[0].upper() + clause_result[1:]
+                    processed = clause_result
+                    removed += 1
+                    continue
+
+                # Full sentence removal
                 sentence_re = re.compile(
-                    r'[^.!?\n]*' + pattern.pattern + r'[^.!?\n]*[.!?\n]?',
+                    r'[^.!?\n]*' + pattern.pattern + r'[^.!?\n]*[.!?\n]?\s*',
                     re.IGNORECASE,
                 )
                 new_text = sentence_re.sub("", processed).strip()
-                if new_text and new_text != processed.strip():
+                if new_text != processed.strip():
                     processed = new_text
                     removed += 1
 

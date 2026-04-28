@@ -18,6 +18,7 @@ Phase 13 additions:
 Each stage is pluggable and independently testable.
 """
 
+import re
 import time
 from flask import g
 from utils.logger import get_logger
@@ -34,6 +35,21 @@ log = get_logger("pipeline")
 # Singleton enforcers (stateless, safe to share)
 _enforcer = PersonalityEnforcer()
 _quality_enforcer = ResponseQualityEnforcer()
+
+# ── Session Context Store ────────────────────────────────────────────────────
+# Stores the last realtime search context per user/session so follow-up
+# queries like "which team?" can reference the previous search results.
+# Key: user_id or session_id string. Value: {context, query, timestamp}.
+_session_context: dict = {}
+_SESSION_CTX_TTL = 600  # 10 minutes
+
+# ── Placeholder Response Detector ───────────────────────────────────────────
+# Catches LLM responses that contain unfilled template placeholders.
+# These must NEVER reach the user.
+_PLACEHOLDER_RE = re.compile(
+    r"\[(?:Team \d|Score|Venue|Winner|Match|Player|Date|Result|TBD|N/A|Unknown)\]",
+    re.IGNORECASE,
+)
 
 
 class ResponsePipeline:
@@ -112,18 +128,104 @@ class ResponsePipeline:
         # ── Stage 1.5: Real-Time Search ─────────────────────────────────
         realtime_used = False
         search_results = []
+        realtime_detected = False
+        # CRITICAL: Save original message BEFORE search injection
+        # The agent engine must receive the ORIGINAL query, not the augmented one,
+        # otherwise calculator/tool detection will match numeric scores (e.g. 3/41).
+        original_message = user_message
 
-        if self._realtime and self._realtime.detect_realtime_intent(user_message):
+        # Derive a session key for context persistence
+        _user_id = getattr(g, "user_id", None) or "anon"
+        _session_key = str(_user_id)
+        _now = time.time()
+
+        # ── Stage 1.4: Follow-Up Context Injection ───────────────────────
+        # If this is a SHORT follow-up query (< 6 words) and we have a recent
+        # session context, inject it so the LLM can answer "which team?" etc.
+        _stored = _session_context.get(_session_key, {})
+        _is_followup = (
+            len(user_message.split()) < 6
+            and _stored
+            and (_now - _stored.get("timestamp", 0)) < _SESSION_CTX_TTL
+            and not any(w in user_message.lower()
+                        for w in ["hello", "hi", "thanks", "okay", "ok", "bye"])
+        )
+
+        if _is_followup and not self._realtime.detect_realtime_intent(user_message) if self._realtime else False:
+            _ctx = _stored["context"]
+            _prev_q = _stored["query"]
+            log.info("Follow-up detected: injecting session context from '%s'", _prev_q[:60])
+            followup_directive = (
+                f"[FOLLOW-UP CONTEXT: The user's previous question was: '{_prev_q}'. "
+                f"The following search results were retrieved for that question. "
+                f"Use them to answer this follow-up question.\n\n{_ctx}]"
+            )
+            user_message = f"{user_message}\n\n{followup_directive}"
+            query_type = "realtime"
+            realtime_used = True
+            log.info("Session context injected for follow-up (%d chars)", len(_ctx))
+
+        if self._realtime:
+            realtime_detected = self._realtime.detect_realtime_intent(user_message)
+            log.info("Realtime intent check: detected=%s for: '%s'",
+                     realtime_detected, user_message[:80])
+
+        if realtime_detected and self._realtime:
+            log.info("Executing Tavily search for: '%s'", user_message[:80])
             search_results = self._realtime.search(user_message)
+            log.info("Tavily returned %d results", len(search_results))
+
             if search_results:
                 search_context = self._realtime.build_search_context(
                     search_results, user_message
                 )
-                # Inject search context as part of the message
-                user_message = f"{user_message}\n\n{search_context}"
+                log.info("Search context built (%d chars), injecting into prompt",
+                         len(search_context))
+
+                # === CRITICAL: Override directive ===
+                realtime_override = (
+                    "\n\n[REALTIME OVERRIDE: You HAVE access to real-time information "
+                    "through web search. The search results below are FRESH and CURRENT. "
+                    "Use them to answer the user's question accurately. "
+                    "Do NOT say 'I don't have access to real-time information' or "
+                    "'my knowledge cutoff' or 'I cannot browse the internet'. "
+                    "You MUST use the ACTUAL data from the search results. "
+                    "Do NOT use placeholder values like [Team 1], [Score], [Venue]. "
+                    "If a specific value is not in the results, say 'not found in search' — "
+                    "NEVER invent placeholder brackets. "
+                    "Any numbers in the results are factual data (scores, statistics, prices), "
+                    "NOT math expressions. Do NOT calculate them.]\n\n"
+                )
+                user_message = f"{user_message}\n\n{realtime_override}{search_context}"
                 realtime_used = True
                 query_type = "realtime"
-                log.info("Real-time search: %d results injected", len(search_results))
+                log.info("Real-time search: %d results injected with override directive",
+                         len(search_results))
+
+                # Store search context in session for follow-up queries
+                _session_context[_session_key] = {
+                    "context": search_context,
+                    "query": original_message,
+                    "timestamp": _now,
+                }
+                # Prune expired entries
+                expired_keys = [k for k, v in _session_context.items()
+                                if _now - v.get("timestamp", 0) > _SESSION_CTX_TTL]
+                for k in expired_keys:
+                    del _session_context[k]
+
+                log.debug("Final augmented prompt (first 600 chars): %s", user_message[:600])
+            else:
+                log.warning("Tavily search returned 0 results for: '%s'", user_message[:80])
+                fallback_msg = (
+                    "\n\n[REALTIME SEARCH NOTE: A web search was performed but returned "
+                    "no results at this time. Please provide your best answer based on "
+                    "general knowledge. Do NOT use placeholder values like [Team 1] or "
+                    "[Score]. If you cannot provide the specific result, clearly say: "
+                    "'I could not fetch the latest match result from search at this time.']"
+                )
+                user_message = f"{user_message}{fallback_msg}"
+                query_type = "realtime"
 
         # ── Stage 2: Agent Intelligence ───────────────────────────────────
         agent_result = None
@@ -131,11 +233,17 @@ class ResponsePipeline:
         prompt_augment = ""
 
         if self._agent:
-            agent_result = self._agent.process(user_message, qa)
+            # CRITICAL: Pass ORIGINAL message to agent, NOT the search-augmented one.
+            # This prevents the calculator tool from matching cricket scores (3/41, 183-176).
+            agent_result = self._agent.process(original_message, qa)
             agent_mode = agent_result.get("agent_mode", "normal")
 
             # Tool mode: return immediately without LLM
-            if agent_result.get("skip_llm") and agent_result.get("tool_result"):
+            # BUT: If realtime search is active, NEVER skip LLM — the search results
+            # must be processed by the LLM, not returned as a tool result.
+            if (agent_result.get("skip_llm")
+                    and agent_result.get("tool_result")
+                    and not realtime_detected):
                 tool_response = self._agent.format_tool_response(
                     agent_result["tool_result"]
                 )
@@ -172,7 +280,24 @@ class ResponsePipeline:
         except RuntimeError:
             pass
 
-        # ── Stage 4: Format (query-type-aware) ────────────────────────────
+        # ── Stage 3.5: Placeholder Guard ─────────────────────────────────
+        # If the LLM generated template placeholders like [Team 1] or [Score],
+        # the response is unusable. Replace it with a clear honest message.
+        if _PLACEHOLDER_RE.search(ai_response):
+            log.warning("LLM generated placeholder values — intercepting response")
+            log.warning("Placeholder response (first 200 chars): %s", ai_response[:200])
+            if realtime_used:
+                ai_response = (
+                    "I could not fetch the specific match details from search results at this time. "
+                    "Please try asking again in a moment, or check a sports site like "
+                    "ESPNcricinfo or the official IPL website for the latest results."
+                )
+            else:
+                ai_response = (
+                    "I wasn't able to retrieve the specific details for that. "
+                    "Could you provide more context or try rephrasing?"
+                )
+
         if self._formatter:
             ai_response = self._formatter.format(ai_response, query_type)
 
