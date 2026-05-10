@@ -193,6 +193,14 @@ REALTIME_MAX_RESULTS = int(os.getenv("REALTIME_MAX_RESULTS", "5"))
 QUALITY_SCORE_THRESHOLD = float(os.getenv("QUALITY_SCORE_THRESHOLD", "0.4"))
 QUALITY_REGEN_MAX = 1  # Maximum 1 regeneration attempt for weak responses
 
+# ─── Phase 14: Search Intelligence Pipeline ───────────────────────────────────
+ENABLE_SEARCH_INTELLIGENCE = os.getenv("ENABLE_SEARCH_INTELLIGENCE", "true").lower() in ("true", "1", "yes")
+SEARCH_CONFIDENCE_THRESHOLD = float(os.getenv("SEARCH_CONFIDENCE_THRESHOLD", "0.45"))
+SEARCH_MAX_COMPRESSED_CHARS = int(os.getenv("SEARCH_MAX_COMPRESSED_CHARS", "700"))
+SEARCH_MEMORY_TTL = int(os.getenv("SEARCH_MEMORY_TTL", "300"))        # 5 min default
+SEARCH_MEMORY_MAX_ENTRIES = int(os.getenv("SEARCH_MEMORY_MAX", "50"))
+SEARCH_TOP_K_RESULTS = int(os.getenv("SEARCH_TOP_K_RESULTS", "3"))    # results after ranking
+
 
 # ─── Settings Persistence ──────────────────────────────────────────────────────
 _SETTINGS_FILE = os.path.join("/tmp" if IS_VERCEL else BASE_DIR, "nova_settings.json")

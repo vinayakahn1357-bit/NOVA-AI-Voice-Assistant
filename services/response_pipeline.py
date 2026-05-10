@@ -28,7 +28,7 @@ from services.personality_enforcer import (
     SCORE_REGEN_THRESHOLD,
 )
 from services.response_quality import ResponseQualityEnforcer
-from config import QUALITY_SCORE_THRESHOLD, QUALITY_REGEN_MAX
+from config import QUALITY_SCORE_THRESHOLD, QUALITY_REGEN_MAX, ENABLE_SEARCH_INTELLIGENCE
 
 log = get_logger("pipeline")
 
@@ -58,12 +58,14 @@ class ResponsePipeline:
     All stages are optional — the pipeline gracefully skips missing components.
 
     Phase 12: Personality enforcement and strength-scored regeneration.
+    Phase 14: Search intelligence pipeline (orchestrator integration).
     """
 
     def __init__(self, ai_service, query_analyzer=None, agent_engine=None,
                  response_formatter=None, response_sanitizer=None,
                  cache_service=None, personality_enforcer=None,
-                 quality_enforcer=None, realtime_service=None):
+                 quality_enforcer=None, realtime_service=None,
+                 search_orchestrator=None):
         self._ai = ai_service
         self._analyzer = query_analyzer
         self._agent = agent_engine
@@ -74,8 +76,10 @@ class ResponsePipeline:
         self._enforcer = personality_enforcer or _enforcer
         # Phase 13: response quality enforcement
         self._quality = quality_enforcer or _quality_enforcer
-        # Phase 13: real-time search
+        # Phase 13: real-time search (legacy transport layer)
         self._realtime = realtime_service
+        # Phase 14: search intelligence orchestrator
+        self._search_orchestrator = search_orchestrator
 
     def execute(self, history: list, user_message: str,
                 personality: str = "default") -> dict:
@@ -105,6 +109,31 @@ class ResponsePipeline:
         """
         t0 = time.time()
 
+        # Phase 14: Track latency
+        try:
+            from services.response_latency_tracker import latency_tracker
+            _tracker = latency_tracker
+        except Exception:
+            _tracker = None
+
+        # Phase 14: System guard health check
+        try:
+            from utils.system_guard import system_guard
+            if not system_guard.is_healthy():
+                log.warning("Pipeline: system guard unhealthy, returning safe response")
+                return {
+                    "reply": "I'm experiencing high load right now. Please try again in a moment.",
+                    "model": "nova-guard",
+                    "provider": "internal",
+                    "meta": {
+                        "mode": "guard",
+                        "latency_ms": int((time.time() - t0) * 1000),
+                        "system_healthy": False,
+                    },
+                }
+        except Exception:
+            pass
+
         # Validate personality key — fallback to default safely
         try:
             from services.personality_service import VALID_PERSONALITIES
@@ -125,10 +154,12 @@ class ResponsePipeline:
         query_type = qa.get("query_type", "conversation")
         complexity = qa.get("complexity", 5)
 
-        # ── Stage 1.5: Real-Time Search ─────────────────────────────────
+        # ── Stage 1.5: Real-Time Search (Phase 14: Search Intelligence) ──
         realtime_used = False
         search_results = []
         realtime_detected = False
+        search_confidence = 0.0
+        search_meta = {}
         # CRITICAL: Save original message BEFORE search injection
         # The agent engine must receive the ORIGINAL query, not the augmented one,
         # otherwise calculator/tool detection will match numeric scores (e.g. 3/41).
@@ -140,8 +171,6 @@ class ResponsePipeline:
         _now = time.time()
 
         # ── Stage 1.4: Follow-Up Context Injection ───────────────────────
-        # If this is a SHORT follow-up query (< 6 words) and we have a recent
-        # session context, inject it so the LLM can answer "which team?" etc.
         _stored = _session_context.get(_session_key, {})
         _is_followup = (
             len(user_message.split()) < 6
@@ -165,67 +194,111 @@ class ResponsePipeline:
             realtime_used = True
             log.info("Session context injected for follow-up (%d chars)", len(_ctx))
 
-        if self._realtime:
-            realtime_detected = self._realtime.detect_realtime_intent(user_message)
-            log.info("Realtime intent check: detected=%s for: '%s'",
-                     realtime_detected, user_message[:80])
+        # ── Phase 14: Search Intelligence Pipeline ────────────────────────
+        # If SearchOrchestrator is available and enabled, use the optimized
+        # pipeline (rewrite → route → clean → rank → compress → score).
+        # Otherwise fall back to legacy raw Tavily injection.
+        _use_intelligence = (
+            ENABLE_SEARCH_INTELLIGENCE
+            and self._search_orchestrator is not None
+            and not realtime_used  # don't double-search on follow-ups
+        )
 
-        if realtime_detected and self._realtime:
-            log.info("Executing Tavily search for: '%s'", user_message[:80])
-            search_results = self._realtime.search(user_message)
-            log.info("Tavily returned %d results", len(search_results))
+        if _use_intelligence:
+            try:
+                search_result = self._search_orchestrator.execute(user_message, qa)
+                search_meta = search_result.metadata
+                search_confidence = search_result.confidence
 
-            if search_results:
-                search_context = self._realtime.build_search_context(
-                    search_results, user_message
-                )
-                log.info("Search context built (%d chars), injecting into prompt",
-                         len(search_context))
+                if search_result.should_inject and search_result.compressed_context:
+                    # Build structured injection block
+                    injection = self._search_orchestrator.build_injection_block(
+                        search_result, user_message
+                    )
+                    realtime_override = (
+                        "\n\n[REALTIME OVERRIDE: You HAVE access to real-time information "
+                        "via web search. The context below is FRESH and CURRENT. "
+                        "Use it to answer accurately. Do NOT say 'I don't have access to "
+                        "real-time information'. Do NOT use placeholder values like "
+                        "[Team 1], [Score]. Numbers are factual data, NOT math.]\n\n"
+                    )
+                    user_message = f"{user_message}\n\n{realtime_override}{injection}"
+                    realtime_used = True
+                    query_type = "realtime"
+                    search_results = search_result.raw_results
+                    log.info(
+                        "Phase 14 search injected: confidence=%.3f domain=%s chars=%d",
+                        search_confidence, search_result.domain,
+                        len(search_result.compressed_context),
+                    )
 
-                # === CRITICAL: Override directive ===
-                realtime_override = (
-                    "\n\n[REALTIME OVERRIDE: You HAVE access to real-time information "
-                    "through web search. The search results below are FRESH and CURRENT. "
-                    "Use them to answer the user's question accurately. "
-                    "Do NOT say 'I don't have access to real-time information' or "
-                    "'my knowledge cutoff' or 'I cannot browse the internet'. "
-                    "You MUST use the ACTUAL data from the search results. "
-                    "Do NOT use placeholder values like [Team 1], [Score], [Venue]. "
-                    "If a specific value is not in the results, say 'not found in search' — "
-                    "NEVER invent placeholder brackets. "
-                    "Any numbers in the results are factual data (scores, statistics, prices), "
-                    "NOT math expressions. Do NOT calculate them.]\n\n"
-                )
-                user_message = f"{user_message}\n\n{realtime_override}{search_context}"
-                realtime_used = True
-                query_type = "realtime"
-                log.info("Real-time search: %d results injected with override directive",
-                         len(search_results))
+                    # Store compressed context for follow-up queries
+                    _session_context[_session_key] = {
+                        "context": search_result.compressed_context,
+                        "query": original_message,
+                        "timestamp": _now,
+                    }
+                elif search_result.search_performed:
+                    # Search was done but confidence too low — skip injection
+                    log.info(
+                        "Search context SKIPPED: confidence=%.3f < threshold",
+                        search_confidence,
+                    )
+                # else: router decided no search needed — proceed normally
 
-                # Store search context in session for follow-up queries
-                _session_context[_session_key] = {
-                    "context": search_context,
-                    "query": original_message,
-                    "timestamp": _now,
-                }
-                # Prune expired entries
-                expired_keys = [k for k, v in _session_context.items()
-                                if _now - v.get("timestamp", 0) > _SESSION_CTX_TTL]
-                for k in expired_keys:
-                    del _session_context[k]
+            except Exception as exc:
+                log.warning("Search intelligence failed (falling back to legacy): %s", exc)
+                _use_intelligence = False  # trigger legacy fallback below
 
-                log.debug("Final augmented prompt (first 600 chars): %s", user_message[:600])
-            else:
-                log.warning("Tavily search returned 0 results for: '%s'", user_message[:80])
-                fallback_msg = (
-                    "\n\n[REALTIME SEARCH NOTE: A web search was performed but returned "
-                    "no results at this time. Please provide your best answer based on "
-                    "general knowledge. Do NOT use placeholder values like [Team 1] or "
-                    "[Score]. If you cannot provide the specific result, clearly say: "
-                    "'I could not fetch the latest match result from search at this time.']"
-                )
-                user_message = f"{user_message}{fallback_msg}"
-                query_type = "realtime"
+        # ── Legacy Fallback: Raw Tavily injection (Phase 13) ─────────────
+        if not _use_intelligence and not realtime_used:
+            if self._realtime:
+                realtime_detected = self._realtime.detect_realtime_intent(user_message)
+                log.info("Legacy realtime check: detected=%s for: '%s'",
+                         realtime_detected, user_message[:80])
+
+            if realtime_detected and self._realtime:
+                log.info("Legacy Tavily search for: '%s'", user_message[:80])
+                search_results = self._realtime.search(user_message)
+                if search_results:
+                    search_context = self._realtime.build_search_context(
+                        search_results, user_message
+                    )
+                    realtime_override = (
+                        "\n\n[REALTIME OVERRIDE: You HAVE access to real-time information "
+                        "through web search. The search results below are FRESH and CURRENT. "
+                        "Use them to answer the user's question accurately. "
+                        "Do NOT say 'I don't have access to real-time information' or "
+                        "'my knowledge cutoff' or 'I cannot browse the internet'. "
+                        "You MUST use the ACTUAL data from the search results. "
+                        "Do NOT use placeholder values like [Team 1], [Score], [Venue]. "
+                        "If a specific value is not in the results, say 'not found in search' — "
+                        "NEVER invent placeholder brackets. "
+                        "Any numbers in the results are factual data (scores, statistics, prices), "
+                        "NOT math expressions. Do NOT calculate them.]\n\n"
+                    )
+                    user_message = f"{user_message}\n\n{realtime_override}{search_context}"
+                    realtime_used = True
+                    query_type = "realtime"
+                    _session_context[_session_key] = {
+                        "context": search_context,
+                        "query": original_message,
+                        "timestamp": _now,
+                    }
+                else:
+                    fallback_msg = (
+                        "\n\n[REALTIME SEARCH NOTE: A web search was performed but returned "
+                        "no results. Provide your best answer based on general knowledge. "
+                        "Do NOT use placeholder values.]"
+                    )
+                    user_message = f"{user_message}{fallback_msg}"
+                    query_type = "realtime"
+
+        # Prune expired session context entries
+        expired_keys = [k for k, v in _session_context.items()
+                        if _now - v.get("timestamp", 0) > _SESSION_CTX_TTL]
+        for k in expired_keys:
+            del _session_context[k]
 
         # ── Stage 2: Agent Intelligence ───────────────────────────────────
         agent_result = None
@@ -423,6 +496,9 @@ class ResponsePipeline:
             "quality_regenerated": quality_regenerated,
             # Phase 13: Real-time search metadata
             "realtime_search": realtime_used,
+            # Phase 14: Search intelligence metadata
+            "search_confidence": round(search_confidence, 3),
+            "search_intelligence": bool(search_meta),
         }
 
         # Add agent metadata if non-normal mode
@@ -440,6 +516,10 @@ class ResponsePipeline:
             elapsed_ms, agent_mode, query_type, provider, active_model,
             personality, personality_score, personality_regenerated, personality_fallback,
         )
+
+        # Phase 14: Record latency
+        if _tracker:
+            _tracker.record("pipeline", elapsed_ms)
 
         return {
             "reply": ai_response,

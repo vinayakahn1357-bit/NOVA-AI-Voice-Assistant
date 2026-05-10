@@ -45,3 +45,9 @@ nova_settings.json
 # ── Railway ─────────────────────────────────────
 Procfile.bak
 nixpacks.toml.bak
+
+# ── Project Report (FY) ────────────────────────
+NOVA_Project_Report.html
+nova_project_report.md
+convert_report.js
+node_modules/

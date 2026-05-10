@@ -1,9 +1,10 @@
 """
-app.py — NOVA AI Assistant — Application Factory (Phase 13)
+app.py — NOVA AI Assistant — Application Factory (Phase 14)
 Thin entry point wiring all modules.
 Phase 6: PostgreSQL, Redis, TaskQueue, Plugin System, JWT, Structured Logging.
 Phase 7: Autonomous AgentRunner, WorkflowEngine, Unified Capabilities.
 Phase 13: Response Quality Enforcement, Real-Time Search, Smart Routing.
+Phase 14: Search Intelligence Pipeline (orchestrator, compression, confidence).
 """
 
 import os
@@ -116,6 +117,7 @@ from services.response_pipeline import ResponsePipeline
 from services.personality_enforcer import PersonalityEnforcer
 from services.response_quality import ResponseQualityEnforcer
 from services.realtime_service import RealtimeSearchService
+from services.search.search_orchestrator import SearchOrchestrator
 from controllers.chat_controller import ChatController
 
 # Wire services together (Phase V2: Groq + NVIDIA dual-provider)
@@ -141,16 +143,51 @@ personality_enforcer = PersonalityEnforcer()
 # Phase 13: Response Quality Enforcer + Real-Time Search
 quality_enforcer    = ResponseQualityEnforcer()
 realtime_service    = RealtimeSearchService()
+# Phase 14: Search Intelligence Orchestrator
+from config import ENABLE_SEARCH_INTELLIGENCE
+search_orchestrator = None
+if ENABLE_SEARCH_INTELLIGENCE:
+    try:
+        search_orchestrator = SearchOrchestrator(realtime_service=realtime_service)
+        log.info("Phase 14 — SearchOrchestrator: ACTIVE (8 modules loaded)")
+    except Exception as exc:
+        log.warning("Phase 14 — SearchOrchestrator init failed: %s (legacy fallback)", exc)
+else:
+    log.info("Phase 14 — SearchOrchestrator: DISABLED (feature flag off)")
 response_pipeline   = ResponsePipeline(
     ai_service, query_analyzer, agent_engine,
     response_formatter, response_sanitizer, cache_service,
     personality_enforcer=personality_enforcer,
     quality_enforcer=quality_enforcer,
     realtime_service=realtime_service,
+    search_orchestrator=search_orchestrator,
 )
 log.info("Phase 13 — ResponseQualityEnforcer: ACTIVE")
 log.info("Phase 13 — RealtimeSearchService: %s",
          "ACTIVE" if realtime_service.is_available else "INACTIVE")
+
+# ─── Phase 14: Infrastructure & Quality Modules ───────────────────────────────
+from utils.system_guard import system_guard
+from utils.task_manager import task_manager
+from utils.resource_monitor import resource_monitor
+from services.token_estimator import token_estimator
+from services.prompt_optimizer import PromptOptimizer
+from services.response_latency_tracker import latency_tracker
+
+# Wire token estimator into prompt optimizer
+prompt_optimizer_instance = PromptOptimizer(token_estimator=token_estimator)
+
+# Start resource monitor (local only, no-op on Vercel)
+resource_monitor.start(interval=120)
+
+log.info("Phase 14 — SystemGuard: ACTIVE (max_concurrent=%d)",
+         20 if not IS_VERCEL else 5)
+log.info("Phase 14 — TaskManager: ACTIVE")
+log.info("Phase 14 — ResourceMonitor: %s",
+         "ACTIVE (120s interval)" if not IS_VERCEL else "ON-DEMAND (Vercel)")
+log.info("Phase 14 — TokenEstimator: ACTIVE")
+log.info("Phase 14 — PromptOptimizer: ACTIVE")
+log.info("Phase 14 — LatencyTracker: ACTIVE")
 
 # ─── Phase 7: Autonomous Agent & Workflow Engine ──────────────────────────────
 from services.agent_runner import AgentRunner
@@ -340,8 +377,17 @@ log.info("  Personalities: %d defined", len(__import__('services.personality_ser
 log.info("  Enforcer:     ACTIVE (forbidden phrases + structure + scoring)")
 log.info("  Regen:        ACTIVE (score threshold=0.5, fallback threshold=0.3)")
 log.info("  Romantic:     SAFE MODE (hard safety gate enabled)")
+log.info("Phase 14 Search Intelligence:")
+log.info("  Orchestrator: %s", "ACTIVE" if search_orchestrator else "DISABLED")
+log.info("  Modules:      query_rewriter, search_router, context_cleaner")
+log.info("                context_ranker, context_compressor, confidence_scorer")
+log.info("                search_memory, search_orchestrator")
+log.info("  Confidence:   threshold=%.2f", __import__('config').SEARCH_CONFIDENCE_THRESHOLD)
+log.info("  Compression:  max=%d chars", __import__('config').SEARCH_MAX_COMPRESSED_CHARS)
+log.info("  Memory:       TTL=%ds max=%d entries",
+         __import__('config').SEARCH_MEMORY_TTL, __import__('config').SEARCH_MEMORY_MAX_ENTRIES)
 log.info("═══════════════════════════════════════════════════════")
-log.info("All blueprints registered. NOVA v5 (Phase 12) ready.")
+log.info("All blueprints registered. NOVA v6 (Phase 14) ready.")
 
 # ─── Vercel Serverless Handler ────────────────────────────────────────────────
 handler = app

@@ -52,5 +52,14 @@
     "salt": "d2eae3d2c6c44fd7a2740a77d7f36518",
     "provider": "email",
     "created": 1777117288
+  },
+  "vinayakachn1357@gmail.com": {
+    "id": "8daf02a7-12b1-4d83-a246-1eccfd7bce94",
+    "name": "vinayaka",
+    "email": "vinayakachn1357@gmail.com",
+    "hash": "79d57abbcb85048cc50f742d68ff4119caf573cb16b3d3b9c4fa56071d6ec5fa",
+    "salt": "75613e0494334e7bb0bd66f0a4867235",
+    "provider": "email",
+    "created": 1777527893
   }
 }

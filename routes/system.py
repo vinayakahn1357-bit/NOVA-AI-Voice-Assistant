@@ -145,3 +145,41 @@ def tts_voices():
         return jsonify({"voices": voices})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── Phase 14: Production Diagnostics ──────────────────────────────────────────
+
+@system_bp.route("/diagnostics")
+def diagnostics():
+    """
+    Phase 14: Comprehensive system diagnostics endpoint.
+    Returns guard status, task stats, latency percentiles, and resource usage.
+    """
+    result = {"phase": 14, "modules": {}}
+
+    try:
+        from utils.system_guard import system_guard
+        result["modules"]["system_guard"] = system_guard.get_status()
+    except Exception as exc:
+        result["modules"]["system_guard"] = {"error": str(exc)}
+
+    try:
+        from utils.task_manager import task_manager
+        result["modules"]["task_manager"] = task_manager.stats()
+    except Exception as exc:
+        result["modules"]["task_manager"] = {"error": str(exc)}
+
+    try:
+        from services.response_latency_tracker import latency_tracker
+        result["modules"]["latency_tracker"] = latency_tracker.stats()
+    except Exception as exc:
+        result["modules"]["latency_tracker"] = {"error": str(exc)}
+
+    try:
+        from utils.resource_monitor import resource_monitor
+        result["modules"]["resource_monitor"] = resource_monitor.snapshot()
+    except Exception as exc:
+        result["modules"]["resource_monitor"] = {"error": str(exc)}
+
+    return jsonify(result)
+

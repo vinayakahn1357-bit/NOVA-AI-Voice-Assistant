@@ -276,3 +276,48 @@ class PromptBuilder:
 
         return prompt
 
+    # ─── Phase 14: Structured Search Context Injection ────────────────────
+
+    @staticmethod
+    def inject_search_context(messages: list, search_context: str,
+                              query: str = "") -> list:
+        """
+        Inject compressed search context as a system message into chat messages.
+
+        Phase 14: Replaces raw Tavily result injection with structured,
+        compressed context. Keeps search context clearly separated from
+        user conversation to reduce prompt pollution.
+
+        Args:
+            messages: Existing chat messages list
+            search_context: Compressed context from SearchOrchestrator
+            query: Original user query (for override directive)
+
+        Returns:
+            Modified messages list with search context injected
+        """
+        if not search_context:
+            return messages
+
+        ctx_message = {
+            "role": "system",
+            "content": (
+                "## Realtime Search Context\n"
+                "The following is verified, current information from web search. "
+                "Use it to answer the user's question accurately.\n\n"
+                f"{search_context}\n\n"
+                "RULES: Do NOT say 'I don't have access to real-time information'. "
+                "Do NOT use placeholder values like [Team 1] or [Score]. "
+                "Numbers are factual data, NOT math expressions."
+            ),
+        }
+
+        # Insert before the last user message
+        if len(messages) > 1:
+            messages.insert(-1, ctx_message)
+        else:
+            messages.append(ctx_message)
+
+        return messages
+
+
