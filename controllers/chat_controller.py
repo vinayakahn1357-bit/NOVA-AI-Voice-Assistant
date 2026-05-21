@@ -13,7 +13,7 @@ import json
 import re
 import time
 
-from flask import Response, stream_with_context, g, session
+from flask import Response, stream_with_context, g, session, request
 
 from config import (
     get_settings, build_provider_config,
@@ -273,6 +273,26 @@ class ChatController:
         user_message = validate_chat_input(data.get("message", ""))
         user_id = _get_user_id()
 
+        # ── Phase 15: Voice transcript preprocessing (safety layer) ──
+        is_voice = data.get("voice_input", False) or request.headers.get("X-Voice-Input") == "true"
+        if is_voice:
+            try:
+                from services.voice import clean_voice_transcript
+                voice_result = clean_voice_transcript(
+                    user_message,
+                    confidence=data.get("voice_confidence"),
+                    strip_wakeword=False,
+                )
+                if voice_result['text'] is None:
+                    return {
+                        "reply": "",
+                        "session_id": session_id,
+                        "meta": {"filtered": True, "reason": voice_result['filtered_reason']},
+                    }
+                user_message = voice_result['text']
+            except Exception as exc:
+                log.warning("Voice filter error (skipping): %s", exc)
+
         # ── Document clear detection ─────────────────────────────────
         if self._is_doc_clear_request(user_message):
             return self._handle_doc_clear(session_id)
@@ -505,6 +525,28 @@ class ChatController:
         t0 = time.time()
         user_message = validate_chat_input(data.get("message", ""))
         user_id = _get_user_id()
+
+        # ── Phase 15: Voice transcript preprocessing (safety layer) ──
+        is_voice = data.get("voice_input", False) or request.headers.get("X-Voice-Input") == "true"
+        if is_voice:
+            try:
+                from services.voice import clean_voice_transcript
+                voice_result = clean_voice_transcript(
+                    user_message,
+                    confidence=data.get("voice_confidence"),
+                    strip_wakeword=False,
+                )
+                if voice_result['text'] is None:
+                    def _filtered_gen():
+                        yield f'data: {json.dumps({"done": True, "filtered": True, "reason": voice_result["filtered_reason"]})}\n\n'
+                    return Response(
+                        stream_with_context(_filtered_gen()),
+                        mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    )
+                user_message = voice_result['text']
+            except Exception as exc:
+                log.warning("Voice filter error (skipping): %s", exc)
 
         # ── Document clear detection ─────────────────────────────────
         if self._is_doc_clear_request(user_message):

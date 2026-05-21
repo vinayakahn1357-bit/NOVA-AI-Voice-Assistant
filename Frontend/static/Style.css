@@ -8495,7 +8495,58 @@ body {
     opacity: 1;
 }
 
+/* ── Pro: Blinking cursor in live transcript ────────────────────── */
+.vv-cursor {
+    animation: vvCursorBlink 0.8s step-end infinite;
+    color: rgba(0, 229, 255, 0.7);
+    font-style: normal;
+    margin-left: 1px;
+}
 
+@keyframes vvCursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ── Pro: Orb Energy Glow (driven by --orb-energy CSS variable) ─ */
+.vv-orb-wrap {
+    --orb-energy: 0;
+}
+
+/* Aura reacts to energy when listening */
+.vv-orb-wrap.listening .jcore-aura-1 {
+    opacity: calc(0.6 + var(--orb-energy) * 0.4);
+    transform: scale(calc(1 + var(--orb-energy) * 0.25));
+    transition: opacity 0.08s linear, transform 0.08s linear;
+}
+
+.vv-orb-wrap.listening .jcore-aura-2 {
+    opacity: calc(0.5 + var(--orb-energy) * 0.5);
+    transform: scale(calc(1 + var(--orb-energy) * 0.2));
+    transition: opacity 0.08s linear, transform 0.08s linear;
+}
+
+/* Reactor glow intensifies with energy */
+.vv-orb-wrap.listening .jcore-reactor {
+    box-shadow:
+        inset 0 0 calc(40px + var(--orb-energy) * 60px) rgba(0, 229, 255, calc(0.3 + var(--orb-energy) * 0.5)),
+        0 0 calc(50px + var(--orb-energy) * 80px) rgba(0, 229, 255, calc(0.2 + var(--orb-energy) * 0.5));
+    transition: box-shadow 0.08s linear;
+}
+
+/* Energy eye scales with voice energy */
+.vv-orb-wrap.listening .jcore-energy-eye {
+    transform: scale(calc(1.2 + var(--orb-energy) * 0.8));
+    opacity: calc(0.7 + var(--orb-energy) * 0.3);
+    transition: transform 0.08s linear, opacity 0.08s linear;
+}
+
+/* Satellites brighten with energy */
+.vv-orb-wrap.listening .jc-sat {
+    box-shadow: 0 0 calc(15px + var(--orb-energy) * 25px) #00e5ff,
+                0 0 calc(20px + var(--orb-energy) * 30px) #fff;
+    transition: box-shadow 0.08s linear;
+}
 
 /* ── Bottom navigation ──────────────────────────────────────────── */
 .vv-bottom-nav {

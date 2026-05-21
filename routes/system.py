@@ -183,3 +183,48 @@ def diagnostics():
 
     return jsonify(result)
 
+
+# ── Phase 15: Voice Pipeline Diagnostics ──────────────────────────────────────
+
+@system_bp.route("/voice/status")
+def voice_status():
+    """
+    Phase 15: Voice pipeline status and diagnostics.
+    Reports active filters, configurations, and pipeline health.
+    """
+    status = {
+        "phase": 15,
+        "pipeline": "active",
+        "filters": {},
+    }
+
+    # Check each filter module
+    filter_modules = [
+        ("noise_handler", "services.voice.noise_handler"),
+        ("duplicate_filter", "services.voice.duplicate_transcript_filter"),
+        ("transcript_stabilizer", "services.voice.transcript_stabilizer"),
+        ("confidence_filter", "services.voice.speech_confidence_filter"),
+        ("wakeword_lock", "services.voice.wakeword_lock"),
+    ]
+
+    for name, module_path in filter_modules:
+        try:
+            __import__(module_path)
+            status["filters"][name] = {"status": "loaded", "enabled": True}
+        except ImportError as exc:
+            status["filters"][name] = {"status": "missing", "error": str(exc)}
+        except Exception as exc:
+            status["filters"][name] = {"status": "error", "error": str(exc)}
+
+    # Wakeword lock state
+    try:
+        from services.voice.wakeword_lock import _default_lock
+        status["wakeword"] = {
+            "cooldown_active": _default_lock.cooldown_active,
+            "echo_window_active": _default_lock.echo_window_active,
+        }
+    except Exception:
+        pass
+
+    return jsonify(status)
+

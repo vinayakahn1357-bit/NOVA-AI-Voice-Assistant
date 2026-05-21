@@ -1176,6 +1176,16 @@
                                 <span class="vp-active-label">Active: <strong id="vp-active-name">NOVA</strong></span>
                             </div>
                         </div>
+                        <!-- Push-to-Talk Toggle -->
+                        <div class="settings-group" style="margin-top:10px;">
+                            <label class="settings-label">Push-to-Talk Mode</label>
+                            <p class="settings-hint">Hold spacebar or on-screen button to talk. Ideal for noisy rooms.</p>
+                            <div class="settings-toggle-group">
+                                <button class="settings-toggle" id="ptt-toggle-off" onclick="if(window._novaPTT) { window._novaPTT.setEnabled(false); document.getElementById('ptt-toggle-off').classList.add('active'); document.getElementById('ptt-toggle-on').classList.remove('active'); }">🎤 Continuous</button>
+                                <button class="settings-toggle" id="ptt-toggle-on" onclick="if(window._novaPTT) { window._novaPTT.setEnabled(true); document.getElementById('ptt-toggle-on').classList.add('active'); document.getElementById('ptt-toggle-off').classList.remove('active'); }">✋ Push-to-Talk</button>
+                            </div>
+                            <p class="settings-hint" style="margin-top:4px; font-size:0.58rem; opacity:0.4;">Toggle: Ctrl+Shift+P</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1205,6 +1215,16 @@
     <script src="/static/modules/toast.js?v=20260510"></script>
     <script src="/static/modules/markdown.js?v=20260510"></script>
     <script src="/static/modules/chatbubbles.js?v=20260510"></script>
+    <!-- Phase 15: Voice optimization modules -->
+    <script src="/static/modules/mic_preprocessor.js?v=20260521"></script>
+    <script src="/static/modules/stream_audio_guard.js?v=20260521"></script>
+    <!-- Final Polish: Voice reliability & debugging modules -->
+    <script src="/static/modules/speech_activity_threshold.js?v=20260521"></script>
+    <script src="/static/modules/device_change_handler.js?v=20260521"></script>
+    <script src="/static/modules/transcript_debug_overlay.js?v=20260521"></script>
+    <script src="/static/modules/optional_push_to_talk.js?v=20260521"></script>
+    <script src="/static/modules/transcript_corrector.js?v=20260521"></script>
+    <script src="/static/modules/voice_pro_features.js?v=20260521"></script>
     <!-- Phase 14: Frontend stability modules -->
     <script src="/static/modules/stream_guard.js?v=20260510"></script>
     <script src="/static/modules/reconnect_handler.js?v=20260510"></script>

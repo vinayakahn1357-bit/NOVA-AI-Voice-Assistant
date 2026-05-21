@@ -71,8 +71,16 @@ function showView(viewName) {
         const chatLog = document.getElementById('vv-chat-log');
         if (chatLog) chatLog.innerHTML = '';
         if (typeof patchRecognitionForVoiceView === 'function') patchRecognitionForVoiceView();
+        // Sync PTT button visibility for voice view
+        if (window._novaPTT) window._novaPTT.syncVisibility();
+        // Pro: Start visualizer if mic is already active
+        if (_novaProEngine && isListening) _novaProEngine.startVisualizer();
     } else {
         if (typeof stopVoiceParticles === 'function') stopVoiceParticles();
+        // Hide PTT button when leaving voice view
+        if (window._novaPTT) window._novaPTT.syncVisibility();
+        // Pro: Stop visualizer when leaving voice view
+        if (_novaProEngine) _novaProEngine.stopVisualizer();
     }
 }
 
@@ -747,9 +755,207 @@ let currentVoicePreset = localStorage.getItem('nova_voice_preset') || 'nova';
 let _micMutedBySpeaker = false; // true while Nova is speaking
 let _unmuteMicTimer = null;
 
+// ── Phase 15: Voice Optimization — MicPreprocessor + StreamAudioGuard ────────
+let _novaMicPreprocessor = null;
+let _novaStreamGuard = null;
+// ── Final Polish: Activity threshold, device handler, debug overlay, PTT ─────
+let _novaActivityThreshold = null;
+let _novaDeviceHandler = null;
+let _novaDebugOverlay = null;
+let _novaTranscriptCorrector = null;
+let _novaProEngine = null;
+// _novaPTT is on window._ for settings panel access
+
+function _initVoiceOptimizations() {
+    // Initialize MicPreprocessor for optimized mic constraints
+    if (typeof MicPreprocessor !== 'undefined' && MicPreprocessor.isSupported()) {
+        _novaMicPreprocessor = new MicPreprocessor({
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+            sampleRate: 16000,
+            highPassFrequency: 80,
+            onStreamReady: (stream) => {
+                console.info('[NOVA] Mic preprocessor active');
+                // Attach speech activity threshold to the preprocessor stream
+                if (_novaActivityThreshold) {
+                    _novaActivityThreshold.attachStream(stream);
+                }
+            },
+            onStreamError: (e) => console.warn('[NOVA] Mic preprocessor fallback:', e.message),
+            onDisconnect: () => {
+                console.warn('[NOVA] Mic disconnected');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('device_remove', 'Mic track ended');
+            },
+        });
+    }
+    // Initialize StreamAudioGuard for recognition session protection
+    if (typeof StreamAudioGuard !== 'undefined') {
+        _novaStreamGuard = new StreamAudioGuard({
+            maxRestartRate: 3,
+            restartWindow: 10000,
+            sessionTimeout: 300000,
+            onSessionTimeout: () => {
+                if (recognition) try { recognition.stop(); } catch(e) {}
+                showToast('Voice session timed out — tap mic to restart', 'info');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('guard', 'Session timeout');
+            },
+            onRestartBlocked: () => {
+                showToast('Voice restarting too fast — please wait a moment', 'warning');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('guard', 'Restart blocked');
+            },
+            onStreamDead: () => {
+                console.warn('[NOVA] Stream appears dead — reinitializing mic');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('guard', 'Stream dead — reinit');
+                if (_novaMicPreprocessor) {
+                    _novaMicPreprocessor.stop();
+                    _novaMicPreprocessor.init().catch(() => {});
+                }
+            },
+        });
+    }
+
+    // ── Final Polish: Speech Activity Threshold ──────────────────────────────
+    if (typeof SpeechActivityThreshold !== 'undefined' && SpeechActivityThreshold.isSupported()) {
+        _novaActivityThreshold = new SpeechActivityThreshold({
+            threshold: 0.015,
+            holdOpenMs: 200,
+            calibrationDurationMs: 2000,
+            calibrationMargin: 1.8,
+            pollIntervalMs: 80,
+            onSpeechStart: () => {
+                if (_novaDebugOverlay) _novaDebugOverlay.log('speech_start', 'Energy above threshold');
+            },
+            onSilence: () => {
+                if (_novaDebugOverlay) _novaDebugOverlay.log('speech_end', 'Silence detected');
+            },
+            onEnergyUpdate: (energy, threshold, isSpeech) => {
+                // Feed debug overlay with live energy data
+                if (_novaDebugOverlay && _novaDebugOverlay.isVisible) {
+                    _novaDebugOverlay.update('energy', energy);
+                    _novaDebugOverlay.update('threshold', threshold.toFixed(4));
+                    _novaDebugOverlay.update('speechActive', isSpeech);
+                }
+            },
+        });
+        // If mic preprocessor stream is already available, attach now
+        if (_novaMicPreprocessor && _novaMicPreprocessor.stream) {
+            _novaActivityThreshold.attachStream(_novaMicPreprocessor.stream);
+        }
+    }
+
+    // ── Final Polish: Device Change Handler ──────────────────────────────────
+    if (typeof DeviceChangeHandler !== 'undefined' && DeviceChangeHandler.isSupported()) {
+        _novaDeviceHandler = new DeviceChangeHandler({
+            micPreprocessor: _novaMicPreprocessor,
+            recognition: recognition,
+            activityThreshold: _novaActivityThreshold,
+            debounceMs: 500,
+            maxRetries: 3,
+            onDeviceChanged: (info) => {
+                if (_novaDebugOverlay) {
+                    _novaDebugOverlay.log('device_change',
+                        `+${info.added.length} -${info.removed.length} (${info.totalDevices} total)`);
+                    _novaDebugOverlay.update('device', _novaDeviceHandler.getActiveDeviceLabel());
+                }
+            },
+            onDeviceAdded: (d) => {
+                showToast(`🎤 Mic connected: ${d.label}`, 'info');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('device_add', d.label);
+            },
+            onDeviceRemoved: (d) => {
+                showToast(`⚠️ Mic disconnected: ${d.label}`, 'warning');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('device_remove', d.label);
+            },
+            onRecoveryStart: () => {
+                if (_novaDebugOverlay) _novaDebugOverlay.log('recovery', 'Mic recovery started…');
+            },
+            onRecoverySuccess: () => {
+                showToast('🎤 Mic recovered successfully', 'success');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('recovery', 'Success');
+            },
+            onRecoveryFailed: (err) => {
+                showToast('Mic recovery failed — please tap mic to retry', 'error');
+                if (_novaDebugOverlay) _novaDebugOverlay.log('error', err.message);
+            },
+        });
+    }
+
+    // ── Final Polish: Transcript Debug Overlay ───────────────────────────────
+    if (typeof NovaDebugOverlay !== 'undefined') {
+        _novaDebugOverlay = new NovaDebugOverlay();
+        // Feed initial device info
+        if (_novaDeviceHandler) {
+            _novaDebugOverlay.update('device', _novaDeviceHandler.getActiveDeviceLabel());
+        }
+    }
+
+    // ── Voice Enhancement: Transcript Corrector ──────────────────────────────
+    if (typeof TranscriptCorrector !== 'undefined') {
+        _novaTranscriptCorrector = new TranscriptCorrector({
+            removeFiller: true,
+            fixCapitalization: true,
+        });
+    }
+
+    // ── Voice Pro: Premium engine (waveform, SFX, barge-in, commands, orb glow) ─
+    if (typeof VoiceProEngine !== 'undefined') {
+        _novaProEngine = new VoiceProEngine({
+            activityThreshold: _novaActivityThreshold,
+            recognition: recognition,
+            onStopSpeaking: () => { if (typeof stopSpeaking === 'function') stopSpeaking(); },
+            onStartListening: () => {
+                if (recognition && !isListening && !isSpeaking) {
+                    recognition.continuous = true;
+                    voiceBuffer = '';
+                    try { recognition.start(); } catch(e) {}
+                }
+            },
+            getVolume: () => novaVolume,
+            setVolume: (v) => { if (typeof setVolume === 'function') setVolume(v); },
+            getLastReply: () => _novaProEngine?._lastReply || '',
+            speakFn: (text) => { if (typeof speak === 'function') speak(text); },
+            showToast: (msg, type) => { if (typeof showToast === 'function') showToast(msg, type); },
+            isSpeaking: () => isSpeaking,
+            isListening: () => isListening,
+            isVoiceViewActive: () => typeof isVoiceViewActive === 'function' && isVoiceViewActive(),
+        });
+    }
+
+    // ── Final Polish: Push-to-Talk ───────────────────────────────────────────
+    if (typeof PushToTalk !== 'undefined') {
+        window._novaPTT = new PushToTalk({
+            recognition: recognition,
+            micPreprocessor: _novaMicPreprocessor,
+            pttKey: 'Space',
+            debounceMs: 150,
+            onPTTStart: () => {
+                if (_novaDebugOverlay) _novaDebugOverlay.log('ptt_press', 'PTT active');
+                if (_novaDebugOverlay) _novaDebugOverlay.update('pttMode', 'active');
+            },
+            onPTTStop: () => {
+                if (_novaDebugOverlay) _novaDebugOverlay.log('ptt_release', 'PTT released');
+                if (_novaDebugOverlay) _novaDebugOverlay.update('pttMode', 'off');
+            },
+            onModeChanged: (enabled) => {
+                showToast(enabled ? '✋ Push-to-Talk enabled — hold Space to speak' : '🎤 Continuous listening restored', 'info');
+                if (_novaDebugOverlay) _novaDebugOverlay.update('pttMode', enabled ? 'on' : 'off');
+                // Sync settings UI toggles
+                const offBtn = document.getElementById('ptt-toggle-off');
+                const onBtn = document.getElementById('ptt-toggle-on');
+                if (offBtn) offBtn.classList.toggle('active', !enabled);
+                if (onBtn) onBtn.classList.toggle('active', enabled);
+            },
+        });
+    }
+}
+
 function _muteMicForSpeaking() {
     if (_unmuteMicTimer) { clearTimeout(_unmuteMicTimer); _unmuteMicTimer = null; }
     _micMutedBySpeaker = true;
+    // Pause preprocessor stream during TTS to reduce echo
+    if (_novaMicPreprocessor && _novaMicPreprocessor.isActive) _novaMicPreprocessor.pause();
     // Stop recognition immediately so Nova's TTS audio isn't captured
     if (isListening && recognition) {
         try { recognition.stop(); } catch (e) { /* already stopped */ }
@@ -757,12 +963,15 @@ function _muteMicForSpeaking() {
 }
 
 function _unmuteMicAfterSpeaking() {
-    // Wait 800 ms for speaker echo + reverb to clear before allowing the mic
+    // Wait 1200 ms for speaker echo + reverb to clear before allowing the mic
+    // (increased from 800ms for better echo suppression in reverberant rooms)
     if (_unmuteMicTimer) clearTimeout(_unmuteMicTimer);
     _unmuteMicTimer = setTimeout(() => {
         _micMutedBySpeaker = false;
         _unmuteMicTimer = null;
-    }, 800);
+        // Resume preprocessor stream
+        if (_novaMicPreprocessor && _novaMicPreprocessor.isActive) _novaMicPreprocessor.resume();
+    }, 1200);
 }
 
 // ── Voice personality presets ────────────────────────────────────────────────
@@ -1360,20 +1569,32 @@ function setNovaSpeakingState(active) {
         if (statusEl) statusEl.textContent = '🔊 Nova is speaking…';
         if (hintEl) hintEl.textContent = 'Tap mic to stop Nova';
         if (micBtn) micBtn.classList.add('voice-speaking');
+        // Pro: Start barge-in monitor + play SFX when TTS starts
+        if (_novaProEngine) {
+            _novaProEngine.playSFX('speak');
+            _novaProEngine.startBargeInMonitor();
+        }
     } else {
         if (waveform) waveform.classList.remove('speaking');
         if (micBtn) micBtn.classList.remove('voice-speaking');
         updateVoiceStatusText();
+        // Pro: Stop barge-in monitor when TTS finishes
+        if (_novaProEngine) _novaProEngine.stopBargeInMonitor();
         // If voice view is active, auto-restart listening so mic stays hot
         if (typeof isVoiceViewActive === 'function' && isVoiceViewActive()) {
             setVoiceViewState('idle');
-            // Auto-restart recognition after a brief pause so user can speak again instantly
+            // Final Polish: Do NOT auto-restart if Push-to-Talk is enabled
+            if (window._novaPTT && window._novaPTT.isEnabled) return;
+            // Auto-restart recognition after echo-clear delay (1300ms)
+            // so we don't pick up the tail end of Nova's TTS audio
             setTimeout(() => {
-                if (typeof isVoiceViewActive === 'function' && isVoiceViewActive() && recognition && !isListening && !isSpeaking) {
+                if (typeof isVoiceViewActive === 'function' && isVoiceViewActive() && recognition && !isListening && !isSpeaking && !_micMutedBySpeaker) {
+                    // Ensure continuous mode is restored (PTT may have set it to false)
+                    recognition.continuous = true;
                     voiceBuffer = '';
                     try { recognition.start(); } catch (e) { /* already started */ }
                 }
-            }, 600);
+            }, 1300);
         }
     }
 }
@@ -1947,8 +2168,34 @@ let voiceBuffer = '';
 let silenceTimer = null;          // auto-stop after silence
 const SILENCE_TIMEOUT_MS = 1500; // 1.5s of silence before auto-submit
 
+// ── Phase 15: Client-side duplicate word filter (fast, runs before sending) ──
+function _clientDedup(text) {
+    if (!text) return text;
+    const words = text.trim().split(/\s+/);
+    if (words.length <= 1) return text;
+    // Allowed natural repeats
+    const allowed = new Set(['no','yes','go','wait','ok','okay','please','help','stop','ha','bye']);
+    const result = [words[0]];
+    let repeatCount = 1;
+    for (let i = 1; i < words.length; i++) {
+        const cur = words[i].toLowerCase().replace(/[.,!?;:]/g, '');
+        const prev = words[i-1].toLowerCase().replace(/[.,!?;:]/g, '');
+        if (cur === prev) {
+            repeatCount++;
+            if (allowed.has(cur) && repeatCount <= 3) result.push(words[i]);
+            // else skip — duplicate artifact
+        } else {
+            repeatCount = 1;
+            result.push(words[i]);
+        }
+    }
+    return result.join(' ');
+}
+
 function setVoiceListeningState(active) {
     isListening = active;
+    // Final Polish: Sync device handler so it knows whether to auto-restart on recovery
+    if (_novaDeviceHandler) _novaDeviceHandler.setListeningState(active);
     const allMicBtns = document.querySelectorAll('.mic-orb-btn, .voice-btn');
     const micRing = document.querySelector('.mic-orb-ring');
     if (active) {
@@ -2067,6 +2314,15 @@ function handleMicClick() {
     if (_micMutedBySpeaker) return;  // still in echo-clear delay — ignore tap
     if (isListening) { if (recognition) recognition.stop(); return; }
     if (!recognition) { showToast('Speech recognition is not supported in this browser', 'warning'); return; }
+    // Final Polish: In PTT mode, mic click shows hint instead of starting continuous listen
+    if (window._novaPTT && window._novaPTT.isEnabled) {
+        showToast('Push-to-Talk is active — hold Space or the PTT button to speak', 'info');
+        return;
+    }
+    // Phase 15: Ensure mic preprocessor is active for optimized audio
+    if (_novaMicPreprocessor && !_novaMicPreprocessor.isActive) {
+        _novaMicPreprocessor.init().catch(() => {});
+    }
     voiceBuffer = '';
     recognition.start();
 }
@@ -2076,6 +2332,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     recognition = new SpeechRecognition();
     recognition.continuous = true;       // keep mic open until silence detected
     recognition.interimResults = true;   // receive partial results so we can reset the silence timer
+    recognition.maxAlternatives = 3;     // get multiple candidates for better accuracy
     recognition.lang = 'en-US'; // en-US is faster & more accurate for Web Speech API
 
     // ── Start: reset buffer + silence timer ──────────────────────────────────
@@ -2083,20 +2340,89 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         setVoiceListeningState(true);
         voiceBuffer = '';
         clearTimeout(silenceTimer);
+        // Phase 15: Notify guard of session start
+        if (_novaStreamGuard) _novaStreamGuard.onRecognitionStart();
+        // Final Polish: Feed debug overlay
+        if (_novaDebugOverlay) {
+            _novaDebugOverlay.log('speech_start', 'Recognition session started');
+            if (_novaStreamGuard) _novaDebugOverlay.updateGuardStats(_novaStreamGuard.stats);
+        }
+        // Pro: Play listen chime + start waveform visualizer
+        if (_novaProEngine) {
+            _novaProEngine.playSFX('listen');
+            _novaProEngine.startVisualizer();
+        }
     };
 
     // ── Speech result: accumulate finals, reset silence countdown on any result
     recognition.onresult = (event) => {
         // Reset the silence timer every time we receive any speech (interim or final)
         clearTimeout(silenceTimer);
+        // Phase 15: Notify guard of activity
+        if (_novaStreamGuard) _novaStreamGuard.onRecognitionResult();
+
+        // Final Polish: Speech activity threshold — monitor energy for debug overlay
+        const _satActive = _novaActivityThreshold && _novaActivityThreshold.isAttached;
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
-                voiceBuffer += event.results[i][0].transcript + ' ';
-            }
+                // Voice Enhancement: Pick best alternative if corrector is available
+                let transcript, confidence;
+                if (_novaTranscriptCorrector && event.results[i].length > 1) {
+                    const best = _novaTranscriptCorrector.selectBestAlternative(event.results[i]);
+                    transcript = best.transcript;
+                    confidence = best.confidence;
+                    if (best.index > 0 && _novaDebugOverlay) {
+                        _novaDebugOverlay.log('alt_selected',
+                            `Alt #${best.index} chosen over primary (conf: ${confidence.toFixed(2)})`);
+                    }
+                } else {
+                    transcript = event.results[i][0].transcript;
+                    confidence = event.results[i][0].confidence || 0;
+                }
+
+                // Feed debug overlay with raw transcript + confidence
+                if (_novaDebugOverlay) {
+                    _novaDebugOverlay.update('rawTranscript', transcript);
+                    _novaDebugOverlay.update('confidence', confidence);
+                }
+
+                // Log low-energy results for debugging (informational only —
+                // the Web Speech API is authoritative for final results)
+                if (_satActive && !_novaActivityThreshold.isSpeechActive()) {
+                    _novaActivityThreshold.recordRejection();
+                    if (_novaDebugOverlay) {
+                        _novaDebugOverlay.log('low_energy',
+                            `"${transcript.slice(0, 40)}" (energy: ${_novaActivityThreshold.getCurrentEnergy().toFixed(4)}, conf: ${confidence.toFixed(2)})`);
+                    }
+                } else if (_novaActivityThreshold) {
+                    _novaActivityThreshold.recordAcceptance();
+                }
+
+                voiceBuffer += transcript + ' ';
+
+                // Feed debug overlay with buffer
+                if (_novaDebugOverlay) {
+                    _novaDebugOverlay.update('cleanedTranscript', voiceBuffer.trim());
+                }
+        }
         }
 
-        // After SILENCE_TIMEOUT_MS with no new speech, auto-stop and process
+        // Pro: Feed live transcript with interim words for real-time display
+        if (_novaProEngine) {
+            let interimText = '';
+            for (let j = event.resultIndex; j < event.results.length; j++) {
+                if (!event.results[j].isFinal) {
+                    interimText += event.results[j][0].transcript;
+                }
+            }
+            _novaProEngine.updateLiveTranscript(interimText, voiceBuffer.trim());
+        }
+
+        // After silence, auto-stop and process (Pro: adaptive timeout)
+        const _silenceMs = _novaProEngine
+            ? _novaProEngine.getAdaptiveSilenceTimeout(voiceBuffer)
+            : SILENCE_TIMEOUT_MS;
         silenceTimer = setTimeout(() => {
             if (isListening && recognition) {
                 // Update status to give user feedback
@@ -2104,7 +2430,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
                 if (statusEl) statusEl.textContent = '⏳ Processing…';
                 recognition.stop(); // triggers onend → sendVoiceMessage
             }
-        }, SILENCE_TIMEOUT_MS);
+        }, _silenceMs);
     };
 
     // ── End: clear timer, send whatever was captured ─────────────────────────
@@ -2112,15 +2438,47 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         clearTimeout(silenceTimer);
         silenceTimer = null;
         setVoiceListeningState(false);
-        const finalText = voiceBuffer.trim();
+        // Pro: Stop visualizer + play process SFX
+        if (_novaProEngine) {
+            _novaProEngine.stopVisualizer();
+            if (voiceBuffer.trim()) _novaProEngine.playSFX('process');
+        }
+        // Phase 15: Notify guard of session end
+        if (_novaStreamGuard) _novaStreamGuard.onRecognitionEnd();
+        // Final Polish: Feed debug overlay
+        if (_novaDebugOverlay) {
+            _novaDebugOverlay.log('speech_end', 'Recognition session ended');
+            if (_novaStreamGuard) _novaDebugOverlay.updateGuardStats(_novaStreamGuard.stats);
+            if (_novaActivityThreshold) _novaDebugOverlay.updateThresholdStats(_novaActivityThreshold.stats);
+        }
+        let finalText = voiceBuffer.trim();
         // If mic was muted because Nova was speaking, discard any captured text
         // (it was Nova's own TTS being picked up) and do NOT auto-submit
         if (_micMutedBySpeaker) {
             voiceBuffer = '';
             return;
         }
+        // Phase 15: Client-side duplicate word cleanup
+        if (finalText) {
+            finalText = _clientDedup(finalText);
+        }
+        // Voice Enhancement: Apply transcript correction (word fixes, filler removal, caps)
+        if (finalText && _novaTranscriptCorrector) {
+            const before = finalText;
+            finalText = _novaTranscriptCorrector.correct(finalText);
+            if (before !== finalText && _novaDebugOverlay) {
+                _novaDebugOverlay.log('corrected', `"${before.slice(0,30)}" → "${finalText.slice(0,30)}"`);
+            }
+        }
+        // Pro: Check for voice commands before sending to AI
+        if (finalText && _novaProEngine && _novaProEngine.handleVoiceCommand(finalText)) {
+            voiceBuffer = '';
+            return; // command was handled locally — don't send to AI
+        }
         if (finalText) {
             sendVoiceMessage(finalText);
+            // Pro: Track last AI query for repeat command
+            if (_novaProEngine) _novaProEngine._lastQuery = finalText;
         }
         voiceBuffer = '';
     };
@@ -2129,11 +2487,22 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     recognition.onerror = (event) => {
         clearTimeout(silenceTimer);
         silenceTimer = null;
+        // Phase 15: Let guard classify the error
+        const action = _novaStreamGuard ? _novaStreamGuard.onRecognitionError(event) : null;
+        // Final Polish: Feed debug overlay
+        if (_novaDebugOverlay) {
+            _novaDebugOverlay.log('error', `Recognition error: ${event.error}`);
+            if (_novaStreamGuard) _novaDebugOverlay.updateGuardStats(_novaStreamGuard.stats);
+        }
         // 'no-speech' fires when the mic opens but user hasn't spoken yet — ignore
         if (event.error === 'no-speech') return;
         setVoiceListeningState(false);
         voiceBuffer = '';
-        showToast(`Voice error: ${event.error}`, 'error');
+        if (action !== 'fatal') {
+            showToast(`Voice error: ${event.error}`, 'error');
+        } else {
+            showToast('Microphone access denied — please allow mic in browser settings', 'error');
+        }
     };
 }
 
@@ -2185,6 +2554,20 @@ document.addEventListener('DOMContentLoaded', async function () {
     await applySavedSettings();
     await loadAvailableModels();
     loadPersonality();  // Phase 9: sync personality from backend
+    _initVoiceOptimizations();  // Phase 15: mic preprocessor + stream guard + Final Polish modules
+    // Final Polish: Sync PTT settings toggle UI on load
+    if (window._novaPTT) {
+        const pttEnabled = window._novaPTT.isEnabled;
+        const offBtn = document.getElementById('ptt-toggle-off');
+        const onBtn = document.getElementById('ptt-toggle-on');
+        if (offBtn) offBtn.classList.toggle('active', !pttEnabled);
+        if (onBtn) onBtn.classList.toggle('active', pttEnabled);
+        if (_novaDebugOverlay) _novaDebugOverlay.update('pttMode', pttEnabled ? 'on' : 'off');
+    } else {
+        // Default: Continuous mode active
+        const offBtn = document.getElementById('ptt-toggle-off');
+        if (offBtn) offBtn.classList.add('active');
+    }
 
     // Show welcome if no current session
     if (!currentSessionId || chatSessions.length === 0) {
@@ -2983,6 +3366,15 @@ function handleVoiceViewMic() {
     if (_micMutedBySpeaker) return;  // still in echo-clear delay — ignore tap
     if (isListening) { if (recognition) recognition.stop(); setVoiceViewState('idle'); return; }
     if (!recognition) { showToast('Speech recognition not supported in this browser', 'warning'); return; }
+    // Final Polish: In PTT mode, orb tap shows hint — use PTT button instead
+    if (window._novaPTT && window._novaPTT.isEnabled) {
+        showToast('Push-to-Talk is active — hold Space or the PTT button below', 'info');
+        return;
+    }
+    // Phase 15: Ensure mic preprocessor is active for optimized audio
+    if (_novaMicPreprocessor && !_novaMicPreprocessor.isActive) {
+        _novaMicPreprocessor.init().catch(() => {});
+    }
     // Show instant visual feedback while browser negotiates the mic
     setVoiceViewState('listening');
     voiceBuffer = '';
@@ -3117,6 +3509,8 @@ sendVoiceMessage = async function (message) {
         if (replyText) {
             saveToHistory(message, replyText);
             setVoiceViewState('speaking');
+            // Pro: Track last reply for "NOVA repeat" voice command
+            if (_novaProEngine) _novaProEngine.setLastReply(replyText);
         } else {
             setVoiceViewState('idle');
         }

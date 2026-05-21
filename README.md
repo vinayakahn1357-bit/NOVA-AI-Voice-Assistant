@@ -505,8 +505,7 @@ python app.py
 | **NOVA** | 🤖 | Clear, professional, precise | 1.0 | 1.0 |
 | **Anya** | 🎀 | Playful, curious, child-like energy | 0.82 | 1.45 |
 | **Mitsuri** | 🌸 | Warm, gentle, bubbly | 0.91 | 1.22 |
-| **Jarvis** | 🎩 | Authoritative, measured, butler-like | 0.88 | 0.85 |
-| **Sage** | 🧘 | Calm, deliberate, grounding | 0.78 | 0.92 |
+| **Madara** | 🧘 | Calm, deliberate, grounding | 0.78 | 0.92 |
 
 Voice presets are selectable in the Settings panel. All voices use Microsoft Edge Neural TTS.
 
